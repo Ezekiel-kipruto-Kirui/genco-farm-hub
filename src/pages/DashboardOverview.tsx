@@ -106,8 +106,8 @@ const DashboardOverview = () => {
 
       livestockData.forEach(farmer => {
         // Try different possible field names for goats
-        const goatsMale = parseInt(farmer.goatsMale || farmer.GoatsMale || farmer.male_goats || 0);
-        const goatsFemale = parseInt(farmer.goatsFemale || farmer.GoatsFemale || farmer.female_goats || 0);
+        const goatsMale = parseInt(farmer.goatsMale || farmer.GoatsMale || farmer.maleGoats || 0);
+        const goatsFemale = parseInt(farmer.femaleGoats || farmer.female_goats || 0);
         
         maleGoats += goatsMale;
         femaleGoats += goatsFemale;
@@ -150,10 +150,10 @@ const DashboardOverview = () => {
 
   return (
     <div className="space-y-8">
-      <div>
+      {/* <div>
         <h2 className="text-3xl font-bold mb-2">Dashboard Overview</h2>
         <p className="text-muted-foreground">Key statistics and metrics at a glance</p>
-      </div>
+      </div> */}
 
       <div className="grid gap-6 md:grid-cols-2">
         <StatCard
