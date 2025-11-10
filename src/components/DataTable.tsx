@@ -4,7 +4,7 @@ import { db } from "@/lib/firebase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Search, Trash2, Edit, AlertCircle } from "lucide-react";
+import { Search, Trash2, AlertCircle, Download } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
   AlertDialog,
@@ -88,6 +88,28 @@ const DataTable = ({ collectionName, canEdit }: DataTableProps) => {
     setDeleteId(null);
   };
 
+  const handleExport = () => {
+    const headers = columns.join(",");
+    const rows = filteredData.map((item) =>
+      columns.map((col) => {
+        const value = item[col] || "";
+        return typeof value === "string" && value.includes(",") ? `"${value}"` : value;
+      }).join(",")
+    );
+    const csv = [headers, ...rows].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${collectionName}-${new Date().toISOString().split("T")[0]}.csv`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+    toast({
+      title: "Success",
+      description: "Data exported successfully.",
+    });
+  };
+
   if (loading) {
     return (
       <div className="flex justify-center items-center h-64">
@@ -120,6 +142,10 @@ const DataTable = ({ collectionName, canEdit }: DataTableProps) => {
             className="pl-9"
           />
         </div>
+        <Button onClick={handleExport} variant="outline">
+          <Download className="h-4 w-4 mr-2" />
+          Export
+        </Button>
       </div>
 
       <div className="rounded-md border overflow-x-auto">
