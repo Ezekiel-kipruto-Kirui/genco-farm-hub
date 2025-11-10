@@ -7,7 +7,15 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
-import Dashboard from "./pages/Dashboard";
+import DashboardLayout from "./components/DashboardLayout";
+import DashboardOverview from "./pages/DashboardOverview";
+import LivestockFarmersPage from "./pages/LivestockFarmersPage";
+import FodderFarmersPage from "./pages/FodderFarmersPage";
+import InfrastructurePage from "./pages/InfrastructurePage";
+import CapacityBuildingPage from "./pages/CapacityBuildingPage";
+import LivestockOfftakePage from "./pages/LivestockOfftakePage";
+import FodderOfftakePage from "./pages/FodderOfftakePage";
+import UserManagementPage from "./pages/UserManagementPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -26,10 +34,26 @@ const App = () => (
               path="/dashboard"
               element={
                 <ProtectedRoute allowedRoles={["admin", "chief-admin"]}>
-                  <Dashboard />
+                  <DashboardLayout />
                 </ProtectedRoute>
               }
-            />
+            >
+              <Route index element={<DashboardOverview />} />
+              <Route path="livestock" element={<LivestockFarmersPage />} />
+              <Route path="fodder" element={<FodderFarmersPage />} />
+              <Route path="infrastructure" element={<InfrastructurePage />} />
+              <Route path="capacity" element={<CapacityBuildingPage />} />
+              <Route path="livestock-offtake" element={<LivestockOfftakePage />} />
+              <Route path="fodder-offtake" element={<FodderOfftakePage />} />
+              <Route 
+                path="users" 
+                element={
+                  <ProtectedRoute allowedRoles={["chief-admin"]}>
+                    <UserManagementPage />
+                  </ProtectedRoute>
+                } 
+              />
+            </Route>
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
