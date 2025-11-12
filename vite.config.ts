@@ -8,6 +8,11 @@ export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
     port: 8080,
+    // Add this line to allow your ngrok domain
+    allowedHosts: [
+      'stumpiest-caudally-eloy.ngrok-free.dev', // your current ngrok link
+      '.ngrok-free.dev' // optional: allow all ngrok subdomains
+    ],
   },
   plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
   resolve: {

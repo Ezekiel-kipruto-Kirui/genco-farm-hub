@@ -31,7 +31,6 @@ const menuItems = [
     title: "Fodder Farmers", 
     icon: Wheat,
     subItems: [
-      { title: "Dashboard", url: "/dashboard/fodder/analytics", icon: BarChart3 },
       { title: "Data", url: "/dashboard/fodder", icon: Database },
     ]
   },
@@ -39,7 +38,6 @@ const menuItems = [
     title: "Infrastructure", 
     icon: Building2,
     subItems: [
-      { title: "Dashboard", url: "/dashboard/infrastructure/analytics", icon: BarChart3 },
       { title: "Data", url: "/dashboard/infrastructure", icon: Database },
     ]
   },
@@ -47,7 +45,6 @@ const menuItems = [
     title: "Capacity Building", 
     icon: GraduationCap,
     subItems: [
-      { title: "Dashboard", url: "/dashboard/capacity/analytics", icon: BarChart3 },
       { title: "Data", url: "/dashboard/capacity", icon: Database },
     ]
   },
@@ -63,7 +60,6 @@ const menuItems = [
     title: "Fodder Offtake", 
     icon: Wheat,
     subItems: [
-      { title: "Dashboard", url: "/dashboard/fodder-offtake/analytics", icon: BarChart3 },
       { title: "Data", url: "/dashboard/fodder-offtake", icon: Database },
     ]
   },
@@ -71,7 +67,7 @@ const menuItems = [
 
 export function DashboardSidebar() {
   const { state } = useSidebar();
-  const { userRole } = useAuth();
+  const { userRole, user } = useAuth(); // Added user from useAuth
   const collapsed = state === "collapsed";
 
   return (
@@ -79,7 +75,17 @@ export function DashboardSidebar() {
       <SidebarContent className="bg-sidebar">
         <SidebarGroup>
           <SidebarGroupLabel className="text-sidebar-foreground/70 font-display">
-            Overview
+            <div className="flex items-center gap-3 p-2 ">
+              <div className="w-8 h-8 rounded-full bg-primary/10 shadow-lg flex items-center justify-center flex-shrink-0">
+                <img src="./img/logo.png" alt="GenCo Company Logo" className="rounded-full w-8 h-8 object-cover" />
+              </div>
+              {!collapsed && (
+                <div className="min-w-0 flex-1">
+                  <h1 className="text-base font-bold  truncate">GenCo Company</h1>
+                 
+                </div>
+              )}
+            </div>
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
@@ -88,7 +94,7 @@ export function DashboardSidebar() {
                   <NavLink 
                     to="/dashboard" 
                     end
-                    className="hover:bg-sidebar-accent text-sidebar-foreground" 
+                    className="hover:bg-sidebar-accent text-sidebar-foreground mt-6" 
                     activeClassName="bg-sidebar-primary text-sidebar-primary-foreground font-medium"
                   >
                     <TrendingUp className="h-4 w-4" />
@@ -102,7 +108,7 @@ export function DashboardSidebar() {
 
         <SidebarGroup>
           <SidebarGroupLabel className="text-sidebar-foreground/70 font-display">
-            Data Management
+            {!collapsed && "Data Management"}
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>

@@ -23,7 +23,9 @@ import {
   TrendingUp,
   Map,
   BarChart3,
-  Table
+  Table,
+  DollarSign,
+  Target
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -38,34 +40,32 @@ interface StatCardProps {
 }
 
 const StatCard = ({ title, icon, maleCount, femaleCount, total, gradient }: StatCardProps) => (
-  <Card className={`group relative overflow-hidden border-0 shadow-lg hover:shadow-2xl transition-all duration-500 hover:scale-[1.02] ${gradient}`}>
-    <div className="absolute inset-0 bg-gradient-to-br from-white/20 to-transparent" />
-    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4 relative z-10">
-      <CardTitle className="text-sm font-semibold text-white/90">{title}</CardTitle>
-      <div className="p-2 bg-white/20 rounded-xl text-white backdrop-blur-sm">
-        {icon}
-      </div>
-    </CardHeader>
-    <CardContent className="relative z-10">
-      <div className="flex items-end justify-between mb-4">
-        <div className="text-3xl font-bold text-white">
-          {total.toLocaleString()}
+  <div className="group relative">
+    <div className="relative bg-white/95 backdrop-blur-sm rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 p-6">
+      <div className="flex items-center">
+        <div className="flex-shrink-0">
+          <div className={`w-14 h-14 rounded-xl flex items-center justify-center shadow-lg ${gradient}`}>
+            {icon}
+          </div>
         </div>
-        <TrendingUp className="h-5 w-5 text-white/70" />
-      </div>
-      <div className="flex gap-4">
-        <div className="flex flex-col gap-1">
-          <p className="text-white/80 text-xs font-medium">Male</p>
-          <p className="text-white font-semibold text-lg">{maleCount.toLocaleString()}</p>
-        </div>
-        <div className="h-8 w-px bg-white/30" />
-        <div className="flex flex-col gap-1">
-          <p className="text-white/80 text-xs font-medium">Female</p>
-          <p className="text-white font-semibold text-lg">{femaleCount.toLocaleString()}</p>
+        <div className="ml-5 flex-1">
+          <p className="text-sm font-medium text-slate-600 uppercase tracking-wide">{title}</p>
+          <p className="text-2xl font-bold text-slate-900 mt-1">{total.toLocaleString()}</p>
+          <div className="flex gap-4 mt-3">
+            <div className="flex flex-col">
+              <span className="text-xs font-medium text-slate-600">Male</span>
+              <span className="text-sm font-semibold text-slate-900">{maleCount.toLocaleString()}</span>
+            </div>
+            <div className="h-8 w-px bg-slate-200" />
+            <div className="flex flex-col">
+              <span className="text-xs font-medium text-slate-600">Female</span>
+              <span className="text-sm font-semibold text-slate-900">{femaleCount.toLocaleString()}</span>
+            </div>
+          </div>
         </div>
       </div>
-    </CardContent>
-  </Card>
+    </div>
+  </div>
 );
 
 interface Activity {
@@ -98,51 +98,51 @@ const ActivityTable = ({ activities }: { activities: Activity[] }) => {
   };
 
   return (
-    <div className="bg-white rounded-2xl border-0 shadow-lg overflow-hidden">
+    <div className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-xl overflow-hidden">
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead>
-            <tr className="bg-blue-500 text-white">
-              <th className="p-3 text-left font-semibold text-sm">Activity Name</th>
-              <th className="p-3 text-left font-semibold text-sm">Date</th>
-              <th className="p-3 text-left font-semibold text-sm">Location</th>
-              <th className="p-3 text-left font-semibold text-sm">Participants</th>
-              <th className="p-3 text-left font-semibold text-sm">County</th>
+            <tr className="bg-gradient-to-r from-slate-50 to-slate-100/80 shadow-sm">
+              <th className="p-4 text-left font-semibold text-slate-700 text-sm">Activity Name</th>
+              <th className="p-4 text-left font-semibold text-slate-700 text-sm">Date</th>
+              <th className="p-4 text-left font-semibold text-slate-700 text-sm">Location</th>
+              <th className="p-4 text-left font-semibold text-slate-700 text-sm">Participants</th>
+              <th className="p-4 text-left font-semibold text-slate-700 text-sm">County</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100">
+          <tbody className="divide-y divide-slate-100">
             {activities.map((activity, index) => (
               <tr 
                 key={activity.id} 
-                className="hover:bg-gray-50 transition-colors duration-200 group"
+                className="hover:bg-slate-50/50 transition-colors duration-200 group"
               >
-                <td className="p-2">
+                <td className="p-4">
                   <div className="flex items-center gap-3">
-                    <div className="w-2 h-2 bg-gradient-to-r from-green-500 to-blue-500 rounded-full"></div>
-                    <span className="font-medium text-gray-900 group-hover:text-green-600 transition-colors">
+                    <div className="w-2 h-2 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full"></div>
+                    <span className="font-medium text-slate-900 group-hover:text-blue-600 transition-colors">
                       {activity.activityName}
                     </span>
                   </div>
                 </td>
-                <td className="p-2">
-                  <Badge variant="secondary" className="bg-green-100 text-green-700 border-0">
+                <td className="p-4">
+                  <Badge className="bg-blue-100 text-blue-700 border-0 shadow-sm">
                     {formatDate(activity.date)}
                   </Badge>
                 </td>
-                <td className="p-2">
+                <td className="p-4">
                   <div className="flex items-center gap-2">
-                    <MapPin className="h-4 w-4 text-green-500" />
-                    <span className="text-gray-600">{activity.location}</span>
+                    <MapPin className="h-4 w-4 text-slate-500" />
+                    <span className="text-slate-700">{activity.location}</span>
                   </div>
                 </td>
-                <td className="p-2">
+                <td className="p-4">
                   <div className="flex items-center gap-2">
-                    <Users className="h-4 w-4 text-blue-500" />
-                    <span className="font-semibold text-gray-700">{activity.numberOfPersons}</span>
+                    <Users className="h-4 w-4 text-slate-500" />
+                    <span className="font-semibold text-slate-900">{activity.numberOfPersons}</span>
                   </div>
                 </td>
-                <td className="p-2">
-                  <span className="text-gray-600">{activity.county}</span>
+                <td className="p-4">
+                  <span className="text-slate-700">{activity.county}</span>
                 </td>
               </tr>
             ))}
@@ -152,43 +152,6 @@ const ActivityTable = ({ activities }: { activities: Activity[] }) => {
     </div>
   );
 };
-
-const RegionCard = ({ region }: { region: RegionStats }) => (
-  <Card className="group bg-white border-0 shadow-lg hover:shadow-2xl transition-all duration-500 hover:scale-[1.02] overflow-hidden">
-    <CardContent className="p-2 ">
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-3">
-          <div className="p-2 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl text-white">
-            <Map className="h-4 w-4" />
-          </div>
-          <h4 className="font-bold text-gray-900 line-clamp-1">
-            {region.name}
-          </h4>
-        </div>
-        <Badge className="bg-gradient-to-r from-blue-500 to-purple-600 text-white border-0 shadow-lg font-semibold">
-          {region.farmerCount}
-        </Badge>
-      </div>
-      <div className="flex gap-6">
-        <div className="flex flex-col items-center">
-          
-          <p className="text-blue-600 font-bold text-lg">{region.maleFarmers}</p>
-          <p className="text-gray-500 text-xs">Male Farmers</p>
-        </div>
-        <div className="flex flex-col items-center">
-          
-          <p className="text-pink-600 font-bold text-lg">{region.femaleFarmers}</p>
-          <p className="text-gray-500 text-xs">Female Farmers</p>
-        </div>
-        <div className="flex flex-col items-center">
-          
-          <p className="text-green-600 font-bold text-lg">{region.farmerCount}</p>
-          <p className="text-gray-500 text-xs">Total</p>
-        </div>
-      </div>
-    </CardContent>
-  </Card>
-);
 
 const DashboardOverview = () => {
   const [loading, setLoading] = useState(true);
@@ -376,7 +339,7 @@ const DashboardOverview = () => {
       toast({
         title: "Success",
         description: "Activity added successfully.",
-        className: "bg-gradient-to-r from-green-500 to-blue-500 text-white"
+        className: "bg-white text-slate-900 border border-slate-200"
       });
       setActivityForm({
         activityName: "",
@@ -411,7 +374,7 @@ const DashboardOverview = () => {
       toast({
         title: "Success",
         description: "Activity updated successfully.",
-        className: "bg-gradient-to-r from-green-500 to-blue-500 text-white"
+        className: "bg-white text-slate-900 border border-slate-200"
       });
       setEditingActivity(null);
       setIsEditDialogOpen(false);
@@ -443,7 +406,7 @@ const DashboardOverview = () => {
       toast({
         title: "Success",
         description: "Activity deleted successfully.",
-        className: "bg-gradient-to-r from-green-500 to-blue-500 text-white"
+        className: "bg-white text-slate-900 border border-slate-200"
       });
       fetchRecentActivities();
       fetchAllActivities();
@@ -474,272 +437,405 @@ const DashboardOverview = () => {
 
   const LoadingSkeleton = () => (
     <div className="space-y-8">
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        {[...Array(3)].map((_, i) => (
-          <Card key={i} className="p-6 border-0 shadow-lg overflow-hidden">
-            <div className="flex justify-between items-start mb-4">
-              <Skeleton className="h-6 w-32" />
-              <Skeleton className="h-10 w-10 rounded-xl" />
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-2">
+        {[...Array(4)].map((_, i) => (
+          <div key={i} className="group relative">
+            <div className="relative bg-white/95 backdrop-blur-sm rounded-2xl shadow-xl p-6">
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <Skeleton className="w-14 h-14 rounded-xl" />
+                </div>
+                <div className="ml-5 flex-1">
+                  <Skeleton className="h-4 w-32 mb-2" />
+                  <Skeleton className="h-8 w-20 mb-3" />
+                  <div className="flex gap-4">
+                    <Skeleton className="h-10 flex-1 rounded-lg" />
+                    <Skeleton className="h-10 flex-1 rounded-lg" />
+                  </div>
+                </div>
+              </div>
             </div>
-            <Skeleton className="h-8 w-20 mb-4" />
-            <div className="flex gap-3">
-              <Skeleton className="h-16 flex-1 rounded-lg" />
-              <Skeleton className="h-16 flex-1 rounded-lg" />
-            </div>
-          </Card>
+          </div>
         ))}
       </div>
     </div>
   );
 
+  // Get top 4 regions by farmer count
+  const topRegions = regionStats.slice(0, 4);
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50/30 p-6">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100/80 p-6">
       <div className="max-w-7xl mx-auto space-y-8">
-        {/* Header Section */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-1xl font-bold bg-gradient-to-r from-gray-800 to-green-600 bg-clip-text text-transparent">
-              Dashboard Overview
-            </h1>
-           
-          </div>
-        </div>
+        
 
         {loading ? (
           <LoadingSkeleton />
         ) : (
           <>
-            {/* Stats Grid */}
-            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-              <div className="animate-in slide-in-from-left duration-500">
-                <StatCard
-                  title="Farmers Registered"
-                  icon={<Users className="h-5 w-5" />}
-                  maleCount={stats.maleFarmers}
-                  femaleCount={stats.femaleFarmers}
-                  total={stats.totalFarmers}
-                  gradient="bg-gradient-to-br from-blue-500 to-purple-600"
-                />
-              </div>
-              <div className="animate-in slide-in-from-bottom duration-500 delay-100">
-                <StatCard
-                  title="Trained Farmers"
-                  icon={<GraduationCap className="h-5 w-5" />}
-                  maleCount={stats.trainedMale}
-                  femaleCount={stats.trainedFemale}
-                  total={stats.trainedFarmers}
-                  gradient="bg-gradient-to-br from-green-500 to-emerald-600"
-                />
-              </div>
-              <div className="animate-in slide-in-from-right duration-500 delay-200">
-                <StatCard
-                  title="Animal Census"
-                  icon={<Beef className="h-5 w-5" />}
-                  maleCount={stats.maleGoats}
-                  femaleCount={stats.femaleGoats}
-                  total={stats.totalGoats}
-                  gradient="bg-gradient-to-br from-orange-500 to-red-500"
-                />
+            {/* Main Stats Grid */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <StatCard
+                title="Farmers Registered"
+                icon={<Users className="h-7 w-7 text-blue-600" />}
+                maleCount={stats.maleFarmers}
+                femaleCount={stats.femaleFarmers}
+                total={stats.totalFarmers}
+                gradient="bg-gradient-to-br from-blue-100 to-blue-50"
+              />
+              <StatCard
+                title="Trained Farmers"
+                icon={<GraduationCap className="h-7 w-7 text-green-600" />}
+                maleCount={stats.trainedMale}
+                femaleCount={stats.trainedFemale}
+                total={stats.trainedFarmers}
+                gradient="bg-gradient-to-br from-green-100 to-green-50"
+              />
+              <StatCard
+                title="Animal Census"
+                icon={<Beef className="h-7 w-7 text-orange-600" />}
+                maleCount={stats.maleGoats}
+                femaleCount={stats.femaleGoats}
+                total={stats.totalGoats}
+                gradient="bg-gradient-to-br from-orange-100 to-orange-50"
+              />
+              
+              {/* Updated Regions Visited Card with Top 4 Regions */}
+              <div className="group relative">
+                <div className="relative bg-white/95 backdrop-blur-sm rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 p-6">
+                  <div className="flex items-center">
+                    <div className="flex-shrink-0">
+                      <div className="w-14 h-14 bg-gradient-to-br from-purple-100 to-purple-50 rounded-xl flex items-center justify-center shadow-lg">
+                        <Map className="h-7 w-7 text-purple-600" />
+                      </div>
+                    </div>
+                    <div className="ml-5 flex-1">
+                     <div className="flex items-center justify-between mb-1"> 
+                      <p className="text-sm font-medium text-slate-600 uppercase tracking-wide">Regions Visited</p>
+                      <p className="bg-purple-100 text-purple-700 border-0 text-xs rounded-full text-center w-10">{stats.regionsVisited}</p>
+                      </div>
+                      {/* Top 4 Regions Grid */}
+                      {topRegions.length > 0 && (
+                        <div className="mt-4 grid grid-cols-2 gap-2">
+                          {topRegions.map((region, index) => (
+                            <div key={region.name} className="bg-slate-50/80 rounded-lg p-1 shadow-sm">
+                              <div className="flex items-center justify-between mb-1">
+                                <span className="text-xs font-semibold text-slate-700 truncate">
+                                  {region.name}
+                                </span>
+                                <Badge className="bg-purple-100 text-purple-700 border-0 text-xs">
+                                  {region.farmerCount}
+                                </Badge>
+                              </div>
+                              
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      
+                      {topRegions.length === 0 && (
+                        <div className="mt-3 text-sm text-slate-500">
+                          No region data available
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
 
-            {/* Combined Section: Recent Activities & Regions Overview */}
-            <div className="grid gap-8 grid-cols-2">
-
-             {/* Regions Overview */}
-<div className="space-y-6">
-  <div className="flex items-center justify-between">
-    <div>
-      <h2 className="text-md font-bold bg-gradient-to-r from-gray-800 to-blue-600 bg-clip-text text-transparent">
-        Regions Overview
-      </h2>
-    </div>
-    <Badge className="text-sm bg-gradient-to-r from-blue-500 to-purple-600 text-white border-0 shadow-lg px-4 py-2">
-      {regionStats.length} Regions
-    </Badge>
-  </div>
-
-  <div className="grid grid-cols-2 gap-4">
-    {regionStats.map((region, index) => (
-      <div
-        key={region.name}
-        className="animate-in slide-in-from-bottom duration-500"
-        style={{ animationDelay: `${index * 100}ms` }}
-      >
-        <RegionCard region={region} />
-      </div>
-    ))}
-  </div>
-</div>
-
-               {/* Recent Activities Table */}
-              <div className="space-y-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h2 className="text-md font-bold bg-gradient-to-r from-gray-800 to-green-600 bg-clip-text text-transparent">
-                      Recent Activities
-                    </h2>
-                   
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <Button 
-                      onClick={fetchAllActivities}
-                      className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white font-semibold px-4 py-2 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105"
-                    >
-                      <Eye className="h-4 w-4 mr-2" />
-                      View All
-                    </Button>
-                    <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-                      <DialogTrigger asChild>
-                        <Button className="bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white font-semibold px-4 py-2 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105">
-                          <Plus className="h-4 w-4 mr-2" />
-                          Add
-                        </Button>
-                      </DialogTrigger>
-                      <DialogContent className="sm:max-w-[600px] bg-white rounded-2xl border-0 shadow-2xl">
-                        <DialogHeader>
-                          <DialogTitle className="text-2xl font-bold bg-gradient-to-r from-gray-800 to-green-600 bg-clip-text text-transparent">
-                            Create New Activity
-                          </DialogTitle>
-                        </DialogHeader>
-                        <div className="grid gap-6 py-4">
-                          <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-2">
-                              <Label htmlFor="activityName" className="text-sm font-semibold text-gray-700">Activity Name</Label>
-                              <Input
-                                id="activityName"
-                                value={activityForm.activityName}
-                                onChange={(e) => setActivityForm({...activityForm, activityName: e.target.value})}
-                                placeholder="Enter activity name"
-                                className="rounded-xl border-gray-300 focus:border-green-500 focus:ring-green-500 transition-all"
-                              />
-                            </div>
-                            <div className="space-y-2">
-                              <Label htmlFor="date" className="text-sm font-semibold text-gray-700">Date</Label>
-                              <Input
-                                id="date"
-                                type="date"
-                                value={activityForm.date}
-                                onChange={(e) => setActivityForm({...activityForm, date: e.target.value})}
-                                className="rounded-xl border-gray-300 focus:border-green-500 focus:ring-green-500 transition-all"
-                              />
-                            </div>
-                          </div>
-                          <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-2">
-                              <Label htmlFor="numberOfPersons" className="text-sm font-semibold text-gray-700">Participants</Label>
-                              <Input
-                                id="numberOfPersons"
-                                type="number"
-                                value={activityForm.numberOfPersons}
-                                onChange={(e) => setActivityForm({...activityForm, numberOfPersons: e.target.value})}
-                                placeholder="Number of participants"
-                                className="rounded-xl border-gray-300 focus:border-green-500 focus:ring-green-500 transition-all"
-                              />
-                            </div>
-                            <div className="space-y-2">
-                              <Label htmlFor="county" className="text-sm font-semibold text-gray-700">County</Label>
-                              <Input
-                                id="county"
-                                value={activityForm.county}
-                                onChange={(e) => setActivityForm({...activityForm, county: e.target.value})}
-                                placeholder="Enter county"
-                                className="rounded-xl border-gray-300 focus:border-green-500 focus:ring-green-500 transition-all"
-                              />
-                            </div>
-                          </div>
-                          <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-2">
-                              <Label htmlFor="subcounty" className="text-sm font-semibold text-gray-700">Subcounty</Label>
-                              <Input
-                                id="subcounty"
-                                value={activityForm.subcounty}
-                                onChange={(e) => setActivityForm({...activityForm, subcounty: e.target.value})}
-                                placeholder="Enter subcounty"
-                                className="rounded-xl border-gray-300 focus:border-green-500 focus:ring-green-500 transition-all"
-                              />
-                            </div>
-                            <div className="space-y-2">
-                              <Label htmlFor="location" className="text-sm font-semibold text-gray-700">Location</Label>
-                              <Input
-                                id="location"
-                                value={activityForm.location}
-                                onChange={(e) => setActivityForm({...activityForm, location: e.target.value})}
-                                placeholder="Enter location"
-                                className="rounded-xl border-gray-300 focus:border-green-500 focus:ring-green-500 transition-all"
-                              />
-                            </div>
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="namesOfPersons" className="text-sm font-semibold text-gray-700">Participant Names</Label>
-                            <Textarea
-                              id="namesOfPersons"
-                              value={activityForm.namesOfPersons}
-                              onChange={(e) => setActivityForm({...activityForm, namesOfPersons: e.target.value})}
-                              placeholder="Enter names separated by commas"
-                              className="rounded-xl border-gray-300 focus:border-green-500 focus:ring-green-500 transition-all min-h-[80px]"
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="roles" className="text-sm font-semibold text-gray-700">Roles</Label>
-                            <Textarea
-                              id="roles"
-                              value={activityForm.roles}
-                              onChange={(e) => setActivityForm({...activityForm, roles: e.target.value})}
-                              placeholder="Enter roles separated by commas"
-                              className="rounded-xl border-gray-300 focus:border-green-500 focus:ring-green-500 transition-all min-h-[80px]"
-                            />
-                          </div>
-                        </div>
-                        <div className="flex justify-end gap-3">
-                          <Button 
-                            variant="outline" 
-                            onClick={() => setIsAddDialogOpen(false)}
-                            className="rounded-xl border-gray-300 hover:border-gray-400 transition-all"
-                          >
-                            Cancel
-                          </Button>
-                          <Button 
-                            onClick={handleAddActivity}
-                            className="bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 rounded-xl text-white font-semibold shadow-lg hover:shadow-xl transition-all"
-                          >
-                            <Calendar className="h-4 w-4 mr-2" />
-                            Create Activity
-                          </Button>
-                        </div>
-                      </DialogContent>
-                    </Dialog>
+            {/* Recent Activities Section */}
+            <div className="space-y-6">
+              <div className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-xl overflow-hidden">
+                <div className="px-6 py-4 bg-gradient-to-r from-slate-50 to-slate-100/80 shadow-sm">
+                  <div className="flex items-center">
+                    <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-500 rounded-lg flex items-center justify-center shadow-lg mr-3">
+                      <Activity className="w-4 h-4 text-white" />
+                    </div>
+                    <h3 className="text-lg font-semibold text-slate-900">Recent Activities</h3>
                   </div>
                 </div>
 
-                {activitiesLoading ? (
-                  <div className="space-y-3">
-                    {[...Array(5)].map((_, i) => (
-                      <Skeleton key={i} className="h-16 w-full rounded-xl" />
-                    ))}
-                  </div>
-                ) : recentActivities.length > 0 ? (
-                  <ActivityTable activities={recentActivities} />
-                ) : (
-                  <Card className="text-center p-8 border-0 shadow-lg bg-gradient-to-br from-gray-50 to-green-50/50 rounded-2xl">
-                    <div className="w-16 h-16 bg-gradient-to-r from-green-500 to-blue-500 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg">
-                      <Table className="h-8 w-8 text-white" />
+                <div className="p-6">
+                  {activitiesLoading ? (
+                    <div className="space-y-3">
+                      {[...Array(5)].map((_, i) => (
+                        <Skeleton key={i} className="h-16 w-full rounded-xl" />
+                      ))}
                     </div>
-                    <h4 className="text-xl font-bold text-gray-800 mb-2">
-                      No activities yet
-                    </h4>
-                    <p className="text-gray-600 mb-4">
-                      Start tracking your field activities and events to see them displayed here.
-                    </p>
-                    <Button
-                      onClick={() => setIsAddDialogOpen(true)}
-                      className="bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white font-semibold px-6 py-2 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105"
-                    >
-                      <Plus className="h-4 w-4 mr-2" />
-                      Create First Activity
-                    </Button>
-                  </Card>
-                )}
+                  ) : recentActivities.length > 0 ? (
+                    <>
+                      <ActivityTable activities={recentActivities} />
+                      
+                      {/* Action Buttons at Bottom */}
+                      <div className="flex justify-between items-center pt-6 mt-6 border-t border-slate-200">
+                        <Button 
+                          onClick={fetchAllActivities}
+                          variant="outline"
+                          className="border-slate-300 text-slate-700 hover:bg-slate-50 font-medium px-4 py-2 rounded-xl transition-all duration-200 shadow-sm"
+                        >
+                          <Eye className="h-4 w-4 mr-2" />
+                          View All Activities
+                        </Button>
+                        
+                        <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+                          <DialogTrigger asChild>
+                            <Button className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white font-semibold px-4 py-2 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200">
+                              <Plus className="h-4 w-4 mr-2" />
+                              Add New Activity
+                            </Button>
+                          </DialogTrigger>
+                          <DialogContent className="sm:max-w-[600px] bg-white rounded-2xl border-0 shadow-2xl">
+                            <DialogHeader>
+                              <DialogTitle className="text-xl font-semibold text-slate-900">
+                                Create New Activity
+                              </DialogTitle>
+                            </DialogHeader>
+                            <div className="grid gap-6 py-4">
+                              <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                  <Label htmlFor="activityName" className="text-sm font-medium text-slate-700">Activity Name</Label>
+                                  <Input
+                                    id="activityName"
+                                    value={activityForm.activityName}
+                                    onChange={(e) => setActivityForm({...activityForm, activityName: e.target.value})}
+                                    placeholder="Enter activity name"
+                                    className="rounded-xl border-slate-300 focus:border-blue-500 focus:ring-blue-500 transition-all bg-white"
+                                  />
+                                </div>
+                                <div className="space-y-2">
+                                  <Label htmlFor="date" className="text-sm font-medium text-slate-700">Date</Label>
+                                  <Input
+                                    id="date"
+                                    type="date"
+                                    value={activityForm.date}
+                                    onChange={(e) => setActivityForm({...activityForm, date: e.target.value})}
+                                    className="rounded-xl border-slate-300 focus:border-blue-500 focus:ring-blue-500 transition-all bg-white"
+                                  />
+                                </div>
+                              </div>
+                              <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                  <Label htmlFor="numberOfPersons" className="text-sm font-medium text-slate-700">Participants</Label>
+                                  <Input
+                                    id="numberOfPersons"
+                                    type="number"
+                                    value={activityForm.numberOfPersons}
+                                    onChange={(e) => setActivityForm({...activityForm, numberOfPersons: e.target.value})}
+                                    placeholder="Number of participants"
+                                    className="rounded-xl border-slate-300 focus:border-blue-500 focus:ring-blue-500 transition-all bg-white"
+                                  />
+                                </div>
+                                <div className="space-y-2">
+                                  <Label htmlFor="county" className="text-sm font-medium text-slate-700">County</Label>
+                                  <Input
+                                    id="county"
+                                    value={activityForm.county}
+                                    onChange={(e) => setActivityForm({...activityForm, county: e.target.value})}
+                                    placeholder="Enter county"
+                                    className="rounded-xl border-slate-300 focus:border-blue-500 focus:ring-blue-500 transition-all bg-white"
+                                  />
+                                </div>
+                              </div>
+                              <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                  <Label htmlFor="subcounty" className="text-sm font-medium text-slate-700">Subcounty</Label>
+                                  <Input
+                                    id="subcounty"
+                                    value={activityForm.subcounty}
+                                    onChange={(e) => setActivityForm({...activityForm, subcounty: e.target.value})}
+                                    placeholder="Enter subcounty"
+                                    className="rounded-xl border-slate-300 focus:border-blue-500 focus:ring-blue-500 transition-all bg-white"
+                                  />
+                                </div>
+                                <div className="space-y-2">
+                                  <Label htmlFor="location" className="text-sm font-medium text-slate-700">Location</Label>
+                                  <Input
+                                    id="location"
+                                    value={activityForm.location}
+                                    onChange={(e) => setActivityForm({...activityForm, location: e.target.value})}
+                                    placeholder="Enter location"
+                                    className="rounded-xl border-slate-300 focus:border-blue-500 focus:ring-blue-500 transition-all bg-white"
+                                  />
+                                </div>
+                              </div>
+                              <div className="space-y-2">
+                                <Label htmlFor="namesOfPersons" className="text-sm font-medium text-slate-700">Participant Names</Label>
+                                <Textarea
+                                  id="namesOfPersons"
+                                  value={activityForm.namesOfPersons}
+                                  onChange={(e) => setActivityForm({...activityForm, namesOfPersons: e.target.value})}
+                                  placeholder="Enter names separated by commas"
+                                  className="rounded-xl border-slate-300 focus:border-blue-500 focus:ring-blue-500 transition-all bg-white min-h-[80px]"
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <Label htmlFor="roles" className="text-sm font-medium text-slate-700">Roles</Label>
+                                <Textarea
+                                  id="roles"
+                                  value={activityForm.roles}
+                                  onChange={(e) => setActivityForm({...activityForm, roles: e.target.value})}
+                                  placeholder="Enter roles separated by commas"
+                                  className="rounded-xl border-slate-300 focus:border-blue-500 focus:ring-blue-500 transition-all bg-white min-h-[80px]"
+                                />
+                              </div>
+                            </div>
+                            <div className="flex justify-end gap-3">
+                              <Button 
+                                variant="outline" 
+                                onClick={() => setIsAddDialogOpen(false)}
+                                className="rounded-xl border-slate-300 hover:border-slate-400 transition-all text-slate-700"
+                              >
+                                Cancel
+                              </Button>
+                              <Button 
+                                onClick={handleAddActivity}
+                                className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 rounded-xl text-white font-semibold shadow-lg hover:shadow-xl transition-all"
+                              >
+                                <Calendar className="h-4 w-4 mr-2" />
+                                Create Activity
+                              </Button>
+                            </div>
+                          </DialogContent>
+                        </Dialog>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-center p-8 border-2 border-dashed border-slate-300 rounded-2xl bg-slate-50/50">
+                      <div className="w-16 h-16 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg">
+                        <Table className="h-8 w-8 text-white" />
+                      </div>
+                      <h4 className="text-xl font-bold text-slate-800 mb-2">
+                        No activities yet
+                      </h4>
+                      <p className="text-slate-600 mb-4">
+                        Start tracking your field activities and events to see them displayed here.
+                      </p>
+                      <div className="flex justify-center">
+                        <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+                          <DialogTrigger asChild>
+                            <Button className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white font-semibold px-4 py-2 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200">
+                              <Plus className="h-4 w-4 mr-2" />
+                              Add Your First Activity
+                            </Button>
+                          </DialogTrigger>
+                          <DialogContent className="sm:max-w-[600px] bg-white rounded-2xl border-0 shadow-2xl">
+                            <DialogHeader>
+                              <DialogTitle className="text-xl font-semibold text-slate-900">
+                                Create New Activity
+                              </DialogTitle>
+                            </DialogHeader>
+                            <div className="grid gap-6 py-4">
+                              <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                  <Label htmlFor="activityName" className="text-sm font-medium text-slate-700">Activity Name</Label>
+                                  <Input
+                                    id="activityName"
+                                    value={activityForm.activityName}
+                                    onChange={(e) => setActivityForm({...activityForm, activityName: e.target.value})}
+                                    placeholder="Enter activity name"
+                                    className="rounded-xl border-slate-300 focus:border-blue-500 focus:ring-blue-500 transition-all bg-white"
+                                  />
+                                </div>
+                                <div className="space-y-2">
+                                  <Label htmlFor="date" className="text-sm font-medium text-slate-700">Date</Label>
+                                  <Input
+                                    id="date"
+                                    type="date"
+                                    value={activityForm.date}
+                                    onChange={(e) => setActivityForm({...activityForm, date: e.target.value})}
+                                    className="rounded-xl border-slate-300 focus:border-blue-500 focus:ring-blue-500 transition-all bg-white"
+                                  />
+                                </div>
+                              </div>
+                              <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                  <Label htmlFor="numberOfPersons" className="text-sm font-medium text-slate-700">Participants</Label>
+                                  <Input
+                                    id="numberOfPersons"
+                                    type="number"
+                                    value={activityForm.numberOfPersons}
+                                    onChange={(e) => setActivityForm({...activityForm, numberOfPersons: e.target.value})}
+                                    placeholder="Number of participants"
+                                    className="rounded-xl border-slate-300 focus:border-blue-500 focus:ring-blue-500 transition-all bg-white"
+                                  />
+                                </div>
+                                <div className="space-y-2">
+                                  <Label htmlFor="county" className="text-sm font-medium text-slate-700">County</Label>
+                                  <Input
+                                    id="county"
+                                    value={activityForm.county}
+                                    onChange={(e) => setActivityForm({...activityForm, county: e.target.value})}
+                                    placeholder="Enter county"
+                                    className="rounded-xl border-slate-300 focus:border-blue-500 focus:ring-blue-500 transition-all bg-white"
+                                  />
+                                </div>
+                              </div>
+                              <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                  <Label htmlFor="subcounty" className="text-sm font-medium text-slate-700">Subcounty</Label>
+                                  <Input
+                                    id="subcounty"
+                                    value={activityForm.subcounty}
+                                    onChange={(e) => setActivityForm({...activityForm, subcounty: e.target.value})}
+                                    placeholder="Enter subcounty"
+                                    className="rounded-xl border-slate-300 focus:border-blue-500 focus:ring-blue-500 transition-all bg-white"
+                                  />
+                                </div>
+                                <div className="space-y-2">
+                                  <Label htmlFor="location" className="text-sm font-medium text-slate-700">Location</Label>
+                                  <Input
+                                    id="location"
+                                    value={activityForm.location}
+                                    onChange={(e) => setActivityForm({...activityForm, location: e.target.value})}
+                                    placeholder="Enter location"
+                                    className="rounded-xl border-slate-300 focus:border-blue-500 focus:ring-blue-500 transition-all bg-white"
+                                  />
+                                </div>
+                              </div>
+                              <div className="space-y-2">
+                                <Label htmlFor="namesOfPersons" className="text-sm font-medium text-slate-700">Participant Names</Label>
+                                <Textarea
+                                  id="namesOfPersons"
+                                  value={activityForm.namesOfPersons}
+                                  onChange={(e) => setActivityForm({...activityForm, namesOfPersons: e.target.value})}
+                                  placeholder="Enter names separated by commas"
+                                  className="rounded-xl border-slate-300 focus:border-blue-500 focus:ring-blue-500 transition-all bg-white min-h-[80px]"
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <Label htmlFor="roles" className="text-sm font-medium text-slate-700">Roles</Label>
+                                <Textarea
+                                  id="roles"
+                                  value={activityForm.roles}
+                                  onChange={(e) => setActivityForm({...activityForm, roles: e.target.value})}
+                                  placeholder="Enter roles separated by commas"
+                                  className="rounded-xl border-slate-300 focus:border-blue-500 focus:ring-blue-500 transition-all bg-white min-h-[80px]"
+                                />
+                              </div>
+                            </div>
+                            <div className="flex justify-end gap-3">
+                              <Button 
+                                variant="outline" 
+                                onClick={() => setIsAddDialogOpen(false)}
+                                className="rounded-xl border-slate-300 hover:border-slate-400 transition-all text-slate-700"
+                              >
+                                Cancel
+                              </Button>
+                              <Button 
+                                onClick={handleAddActivity}
+                                className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 rounded-xl text-white font-semibold shadow-lg hover:shadow-xl transition-all"
+                              >
+                                <Calendar className="h-4 w-4 mr-2" />
+                                Create Activity
+                              </Button>
+                            </div>
+                          </DialogContent>
+                        </Dialog>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </>
@@ -749,13 +845,13 @@ const DashboardOverview = () => {
         <Dialog open={isViewAllDialogOpen} onOpenChange={setIsViewAllDialogOpen}>
           <DialogContent className="max-w-6xl max-h-[80vh] bg-white rounded-2xl border-0 shadow-2xl">
             <DialogHeader>
-              <DialogTitle className="text-2xl font-bold bg-gradient-to-r from-gray-800 to-green-600 bg-clip-text text-transparent flex items-center justify-between">
+              <DialogTitle className="text-xl font-semibold text-slate-900 flex items-center justify-between">
                 <span>All Activities</span>
                 <Button
                   variant="ghost"
                   size="icon"
                   onClick={() => setIsViewAllDialogOpen(false)}
-                  className="h-8 w-8 rounded-lg hover:bg-gray-100 transition-colors"
+                  className="h-8 w-8 rounded-lg hover:bg-slate-100 transition-colors text-slate-600"
                 >
                   <X className="h-4 w-4" />
                 </Button>
@@ -763,36 +859,36 @@ const DashboardOverview = () => {
             </DialogHeader>
             <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2">
               {allActivities.map((activity) => (
-                <Card key={activity.id} className="border-0 shadow-lg hover:shadow-xl transition-all duration-300 group">
-                  <CardContent className="p-6">
+                <div key={activity.id} className="group relative">
+                  <div className="relative bg-white/95 backdrop-blur-sm rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 p-6">
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
-                        <h4 className="font-bold text-lg text-gray-900 mb-3 group-hover:text-green-600 transition-colors">
+                        <h4 className="font-semibold text-slate-900 mb-3 group-hover:text-blue-600 transition-colors">
                           {activity.activityName}
                         </h4>
-                        <div className="space-y-2 text-sm text-gray-600">
+                        <div className="space-y-2 text-sm text-slate-600">
                           <div className="flex items-center gap-3">
-                            <Calendar className="h-4 w-4 text-green-500" />
+                            <Calendar className="h-4 w-4 text-slate-500" />
                             <span className="font-medium">{new Date(activity.date).toLocaleDateString()}</span>
                           </div>
                           <div className="flex items-center gap-3">
-                            <MapPin className="h-4 w-4 text-green-500" />
+                            <MapPin className="h-4 w-4 text-slate-500" />
                             <span>{activity.location}, {activity.county}</span>
                           </div>
                           <div className="flex items-center gap-3">
-                            <Users className="h-4 w-4 text-green-500" />
+                            <Users className="h-4 w-4 text-slate-500" />
                             <span className="font-semibold">{activity.numberOfPersons} participants</span>
                           </div>
                           {activity.namesOfPersons && (
                             <div>
-                              <p className="font-semibold text-green-600 text-sm">Participants:</p>
-                              <p className="text-sm text-gray-700">{activity.namesOfPersons}</p>
+                              <p className="font-semibold text-blue-600 text-sm">Participants:</p>
+                              <p className="text-sm text-slate-700">{activity.namesOfPersons}</p>
                             </div>
                           )}
                           {activity.roles && (
                             <div>
-                              <p className="font-semibold text-green-600 text-sm">Roles:</p>
-                              <p className="text-sm text-gray-700">{activity.roles}</p>
+                              <p className="font-semibold text-blue-600 text-sm">Roles:</p>
+                              <p className="text-sm text-slate-700">{activity.roles}</p>
                             </div>
                           )}
                         </div>
@@ -801,7 +897,7 @@ const DashboardOverview = () => {
                         <Button
                           size="sm"
                           onClick={() => openEditDialog(activity)}
-                          className="bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white rounded-lg transition-all"
+                          className="bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white rounded-lg transition-all shadow-sm"
                         >
                           <Edit className="h-4 w-4" />
                         </Button>
@@ -809,14 +905,14 @@ const DashboardOverview = () => {
                           size="sm"
                           variant="destructive"
                           onClick={() => handleDeleteActivity(activity.id)}
-                          className="rounded-lg transition-all"
+                          className="rounded-lg transition-all shadow-sm"
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
                     </div>
-                  </CardContent>
-                </Card>
+                  </div>
+                </div>
               ))}
             </div>
           </DialogContent>
@@ -826,96 +922,96 @@ const DashboardOverview = () => {
         <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
           <DialogContent className="sm:max-w-[600px] bg-white rounded-2xl border-0 shadow-2xl">
             <DialogHeader>
-              <DialogTitle className="text-2xl font-bold bg-gradient-to-r from-gray-800 to-green-600 bg-clip-text text-transparent">
+              <DialogTitle className="text-xl font-semibold text-slate-900">
                 Edit Activity
               </DialogTitle>
             </DialogHeader>
             <div className="grid gap-6 py-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="edit-activityName" className="text-sm font-semibold text-gray-700">Activity Name</Label>
+                  <Label htmlFor="edit-activityName" className="text-sm font-medium text-slate-700">Activity Name</Label>
                   <Input
                     id="edit-activityName"
                     value={activityForm.activityName}
                     onChange={(e) => setActivityForm({...activityForm, activityName: e.target.value})}
                     placeholder="Enter activity name"
-                    className="rounded-xl border-gray-300 focus:border-green-500 focus:ring-green-500 transition-all"
+                    className="rounded-xl border-slate-300 focus:border-blue-500 focus:ring-blue-500 transition-all bg-white"
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="edit-date" className="text-sm font-semibold text-gray-700">Date</Label>
+                  <Label htmlFor="edit-date" className="text-sm font-medium text-slate-700">Date</Label>
                   <Input
                     id="edit-date"
                     type="date"
                     value={activityForm.date}
                     onChange={(e) => setActivityForm({...activityForm, date: e.target.value})}
-                    className="rounded-xl border-gray-300 focus:border-green-500 focus:ring-green-500 transition-all"
+                    className="rounded-xl border-slate-300 focus:border-blue-500 focus:ring-blue-500 transition-all bg-white"
                   />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="edit-numberOfPersons" className="text-sm font-semibold text-gray-700">Participants</Label>
+                  <Label htmlFor="edit-numberOfPersons" className="text-sm font-medium text-slate-700">Participants</Label>
                   <Input
                     id="edit-numberOfPersons"
                     type="number"
                     value={activityForm.numberOfPersons}
                     onChange={(e) => setActivityForm({...activityForm, numberOfPersons: e.target.value})}
                     placeholder="Number of participants"
-                    className="rounded-xl border-gray-300 focus:border-green-500 focus:ring-green-500 transition-all"
+                    className="rounded-xl border-slate-300 focus:border-blue-500 focus:ring-blue-500 transition-all bg-white"
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="edit-county" className="text-sm font-semibold text-gray-700">County</Label>
+                  <Label htmlFor="edit-county" className="text-sm font-medium text-slate-700">County</Label>
                   <Input
                     id="edit-county"
                     value={activityForm.county}
                     onChange={(e) => setActivityForm({...activityForm, county: e.target.value})}
                     placeholder="Enter county"
-                    className="rounded-xl border-gray-300 focus:border-green-500 focus:ring-green-500 transition-all"
+                    className="rounded-xl border-slate-300 focus:border-blue-500 focus:ring-blue-500 transition-all bg-white"
                   />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="edit-subcounty" className="text-sm font-semibold text-gray-700">Subcounty</Label>
+                  <Label htmlFor="edit-subcounty" className="text-sm font-medium text-slate-700">Subcounty</Label>
                   <Input
                     id="edit-subcounty"
                     value={activityForm.subcounty}
                     onChange={(e) => setActivityForm({...activityForm, subcounty: e.target.value})}
                     placeholder="Enter subcounty"
-                    className="rounded-xl border-gray-300 focus:border-green-500 focus:ring-green-500 transition-all"
+                    className="rounded-xl border-slate-300 focus:border-blue-500 focus:ring-blue-500 transition-all bg-white"
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="edit-location" className="text-sm font-semibold text-gray-700">Location</Label>
+                  <Label htmlFor="edit-location" className="text-sm font-medium text-slate-700">Location</Label>
                   <Input
                     id="edit-location"
                     value={activityForm.location}
                     onChange={(e) => setActivityForm({...activityForm, location: e.target.value})}
                     placeholder="Enter location"
-                    className="rounded-xl border-gray-300 focus:border-green-500 focus:ring-green-500 transition-all"
+                    className="rounded-xl border-slate-300 focus:border-blue-500 focus:ring-blue-500 transition-all bg-white"
                   />
                 </div>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="edit-namesOfPersons" className="text-sm font-semibold text-gray-700">Participant Names</Label>
+                <Label htmlFor="edit-namesOfPersons" className="text-sm font-medium text-slate-700">Participant Names</Label>
                 <Textarea
                   id="edit-namesOfPersons"
                   value={activityForm.namesOfPersons}
                   onChange={(e) => setActivityForm({...activityForm, namesOfPersons: e.target.value})}
                   placeholder="Enter names separated by commas"
-                  className="rounded-xl border-gray-300 focus:border-green-500 focus:ring-green-500 transition-all min-h-[80px]"
+                  className="rounded-xl border-slate-300 focus:border-blue-500 focus:ring-blue-500 transition-all bg-white min-h-[80px]"
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="edit-roles" className="text-sm font-semibold text-gray-700">Roles</Label>
+                <Label htmlFor="edit-roles" className="text-sm font-medium text-slate-700">Roles</Label>
                 <Textarea
                   id="edit-roles"
                   value={activityForm.roles}
                   onChange={(e) => setActivityForm({...activityForm, roles: e.target.value})}
                   placeholder="Enter roles separated by commas"
-                  className="rounded-xl border-gray-300 focus:border-green-500 focus:ring-green-500 transition-all min-h-[80px]"
+                  className="rounded-xl border-slate-300 focus:border-blue-500 focus:ring-blue-500 transition-all bg-white min-h-[80px]"
                 />
               </div>
             </div>
@@ -923,13 +1019,13 @@ const DashboardOverview = () => {
               <Button 
                 variant="outline" 
                 onClick={() => setIsEditDialogOpen(false)}
-                className="rounded-xl border-gray-300 hover:border-gray-400 transition-all"
+                className="rounded-xl border-slate-300 hover:border-slate-400 transition-all text-slate-700"
               >
                 Cancel
               </Button>
               <Button 
                 onClick={handleEditActivity}
-                className="bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 rounded-xl text-white font-semibold shadow-lg hover:shadow-xl transition-all"
+                className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 rounded-xl text-white font-semibold shadow-lg hover:shadow-xl transition-all"
               >
                 <Edit className="h-4 w-4 mr-2" />
                 Update Activity
