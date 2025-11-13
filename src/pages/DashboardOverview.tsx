@@ -40,8 +40,8 @@ interface StatCardProps {
 }
 
 const StatCard = ({ title, icon, maleCount, femaleCount, total, gradient }: StatCardProps) => (
-  <div className="group relative">
-    <div className="relative bg-white/95 backdrop-blur-sm rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 p-6">
+  <div className="group relative bg-white">
+    <div className="relative bg-white backdrop-blur-sm rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 p-6">
       <div className="flex items-center">
         <div className="flex-shrink-0">
           <div className={`w-14 h-14 rounded-xl flex items-center justify-center shadow-lg ${gradient}`}>
@@ -516,7 +516,7 @@ const DashboardOverview = () => {
                       </div>
                       {/* Top 4 Regions Grid */}
                       {topRegions.length > 0 && (
-                        <div className="mt-4 grid grid-cols-2 gap-2">
+                        <div className="mt-4 grid grid-cols-2 gap-1">
                           {topRegions.map((region, index) => (
                             <div key={region.name} className="bg-slate-50/80 rounded-lg p-1 shadow-sm">
                               <div className="flex items-center justify-between mb-1">
