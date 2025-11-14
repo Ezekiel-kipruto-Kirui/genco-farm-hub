@@ -1,4 +1,4 @@
-import DataTable from "@/components/DataTable";
+
 
 const UserManagementPage = () => {
   return (
@@ -7,10 +7,7 @@ const UserManagementPage = () => {
         <h2 className="text-3xl font-bold mb-2">User Management</h2>
         <p className="text-muted-foreground">Manage system users and permissions</p>
       </div>
-      <DataTable 
-        collectionName="users" 
-        canEdit={true}
-      />
+     
     </div>
   );
 };

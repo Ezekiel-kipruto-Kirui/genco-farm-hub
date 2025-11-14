@@ -24,21 +24,22 @@ const menuItems = [
     icon: Sprout,
     subItems: [
       { title: "Dashboard", url: "/dashboard/livestock/analytics", icon: BarChart3 },
-      { title: "Data", url: "/dashboard/livestock", icon: Database },
+      { title: "Farmer Data", url: "/dashboard/livestock", icon: Database },
     ]
   },
   { 
     title: "Fodder Farmers", 
     icon: Wheat,
     subItems: [
-      { title: "Data", url: "/dashboard/fodder", icon: Database },
+      { title: "Farmer Data", url: "/dashboard/fodder", icon: Database },
     ]
   },
   { 
     title: "Infrastructure", 
     icon: Building2,
     subItems: [
-      { title: "Data", url: "/dashboard/infrastructure", icon: Database },
+      { title: "Hay Storage", url: "/dashboard/HayStoragepage", icon: Database },
+      { title: "Borehole", url: "/dashboard/BoreHole", icon: Database },
     ]
   },
   { 
@@ -167,18 +168,7 @@ export function DashboardSidebar() {
                     {!collapsed && (
                       <CollapsibleContent>
                         <SidebarMenuSub>
-                          <SidebarMenuSubItem>
-                            <SidebarMenuSubButton asChild>
-                              <NavLink 
-                                to="/dashboard/users/analytics"
-                                className="hover:bg-sidebar-accent text-sidebar-foreground/80"
-                                activeClassName="bg-sidebar-primary/20 text-sidebar-primary font-medium"
-                              >
-                                <BarChart3 className="h-3.5 w-3.5" />
-                                <span>Dashboard</span>
-                              </NavLink>
-                            </SidebarMenuSubButton>
-                          </SidebarMenuSubItem>
+                         
                           <SidebarMenuSubItem>
                             <SidebarMenuSubButton asChild>
                               <NavLink 

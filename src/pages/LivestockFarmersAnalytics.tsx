@@ -18,7 +18,9 @@ const COLORS = {
   red: "hsl(0 84% 60%)",
   teal: "hsl(173 80% 40%)",
   amber: "hsl(45 93% 47%)",
-  indigo: "hsl(239 84% 67%)"
+  indigo: "hsl(239 84% 67%)",
+  pink: "hsl(330 81% 60%)",
+  cyan: "hsl(187 85% 53%)"
 };
 
 const LivestockFarmersAnalytics = () => {
@@ -32,6 +34,7 @@ const LivestockFarmersAnalytics = () => {
   const [trainingComparisonData, setTrainingComparisonData] = useState<any[]>([]);
   const [trainingTrendData, setTrainingTrendData] = useState<any[]>([]);
   const [regionalPerformanceData, setRegionalPerformanceData] = useState<any[]>([]);
+  const [topRegions, setTopRegions] = useState<string[]>([]);
   const [stats, setStats] = useState({ 
     total: 0, 
     trained: 0, 
@@ -261,9 +264,10 @@ const LivestockFarmersAnalytics = () => {
     const monthlyTraining = generateMonthlyTrainingData();
     setTrainingTrendData(monthlyTraining);
 
-    // Regional performance data by week (only weeks 1-4)
-    const weeklyPerformance = generateWeeklyPerformanceData(data);
-    setRegionalPerformanceData(weeklyPerformance);
+    // Regional performance data by week for multiple regions
+    const { weeklyData, regions } = generateRegionalPerformanceData(data);
+    setRegionalPerformanceData(weeklyData);
+    setTopRegions(regions);
 
     // Simple region data for bar chart
     const regionCount: Record<string, number> = {};
@@ -305,59 +309,58 @@ const LivestockFarmersAnalytics = () => {
     return monthlyData;
   };
 
-  const generateWeeklyPerformanceData = (data: any[]) => {
-    // Get the most active region (for single line chart)
+  const generateRegionalPerformanceData = (data: any[]) => {
+    // Get top 4 regions by farmer count (reduced for better fit)
     const regionCount: Record<string, number> = {};
     data.forEach(farmer => {
-      const region = String(farmer.region || farmer.Region || farmer.location || "Unknown");
-      regionCount[region] = (regionCount[region] || 0) + 1;
+      const region = String(farmer.region || farmer.Region || farmer.location || "Unknown").trim();
+      if (region && region !== "Unknown") {
+        regionCount[region] = (regionCount[region] || 0) + 1;
+      }
     });
 
-    const topRegion = Object.entries(regionCount)
-      .sort((a, b) => b[1] - a[1])[0]?.[0] || "All Regions";
+    const topRegions = Object.entries(regionCount)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 4)
+      .map(([region]) => region);
 
-    // Generate weekly data for only 4 weeks
-    const weeks = [];
+    // Generate weekly data for 4 weeks for each region
+    const weeklyData = [];
     
-    for (let i = 1; i <= 4; i++) {
-      const weekLabel = `Week ${i}`;
+    for (let week = 1; week <= 4; week++) {
+      const weekData: any = { name: `W${week}` };
       
-      // Calculate performance metrics for this week based on actual filtered data
-      const weekStart = new Date();
-      weekStart.setDate(weekStart.getDate() - ((4 - i) * 7));
-      
-      // Filter data for this specific week
-      const weekData = data.filter(farmer => {
-        const farmerDate = parseDate(farmer.dateSubmitted || farmer.createdAt || farmer.date);
-        if (!farmerDate) return false;
+      topRegions.forEach(region => {
+        // Filter data for this region and week
+        const regionData = data.filter(farmer => {
+          const farmerRegion = String(farmer.region || farmer.Region || farmer.location || "Unknown").trim();
+          if (farmerRegion !== region) return false;
+          
+          const farmerDate = parseDate(farmer.dateSubmitted || farmer.createdAt || farmer.date);
+          if (!farmerDate) return false;
+          
+          // Simulate weekly distribution for demo purposes
+          const weekStart = new Date();
+          weekStart.setDate(weekStart.getDate() - ((4 - week) * 7));
+          const weekEnd = new Date(weekStart);
+          weekEnd.setDate(weekStart.getDate() + 6);
+          
+          return farmerDate >= weekStart && farmerDate <= weekEnd;
+        });
+
+        const totalFarmers = regionData.length;
+        const trainedFarmers = regionData.filter(farmer => isFarmerTrained(farmer)).length;
+        const performance = totalFarmers > 0 ? Math.round((trainedFarmers / totalFarmers) * 100) : 0;
         
-        const weekStartDate = new Date(weekStart);
-        weekStartDate.setHours(0, 0, 0, 0);
-        const weekEndDate = new Date(weekStart);
-        weekEndDate.setDate(weekStart.getDate() + 6);
-        weekEndDate.setHours(23, 59, 59, 999);
-        
-        return farmerDate >= weekStartDate && farmerDate <= weekEndDate;
+        weekData[region] = performance;
+        weekData[`${region}_farmers`] = totalFarmers;
+        weekData[`${region}_trained`] = trainedFarmers;
       });
-
-      // Calculate actual performance metrics
-      const weekFarmers = weekData.length;
-      const weekTrained = weekData.filter(farmer => isFarmerTrained(farmer)).length;
-      const weekPerformance = weekFarmers > 0 ? Math.round((weekTrained / weekFarmers) * 100) : 0;
-
-      const weekDataPoint = {
-        name: weekLabel,
-        date: weekStart.toISOString().split('T')[0],
-        farmers: weekFarmers,
-        training: weekTrained,
-        performance: weekPerformance,
-        region: topRegion
-      };
       
-      weeks.push(weekDataPoint);
+      weeklyData.push(weekData);
     }
 
-    return weeks;
+    return { weeklyData, regions: topRegions };
   };
 
   const handleDateRangeChange = (key: string, value: string) => {
@@ -452,6 +455,9 @@ const LivestockFarmersAnalytics = () => {
     );
   };
 
+  // Region colors for the chart
+  const regionColors = [COLORS.blue, COLORS.green, COLORS.orange, COLORS.purple];
+
   if (loading) {
     return (
       <div className="flex justify-center items-center h-64">
@@ -535,13 +541,11 @@ const LivestockFarmersAnalytics = () => {
           description="Total goats registered"
           color="orange"
         />
-
-       
       </div>
 
-      {/* Charts Grid */}
-      <div className="grid gap-6 lg:grid-cols-2">
-        {/* Gender Distribution Doughnut - LARGER */}
+      {/* Charts Grid - Updated layout */}
+      <div className="grid gap-6 md:grid-cols-2">
+        {/* Gender Distribution Doughnut */}
         <Card className="border-0 shadow-lg bg-white">
           <CardHeader className="pb-4">
             <CardTitle className="font-display flex items-center gap-2 text-gray-800">
@@ -550,14 +554,14 @@ const LivestockFarmersAnalytics = () => {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={350}>
+            <ResponsiveContainer width="100%" height={300}>
               <PieChart>
                 <Pie
                   data={genderData}
                   cx="50%"
                   cy="50%"
-                  innerRadius={80}
-                  outerRadius={120}
+                  innerRadius={70}
+                  outerRadius={100}
                   paddingAngle={2}
                   dataKey="value"
                   label={renderCustomizedLabel}
@@ -585,23 +589,23 @@ const LivestockFarmersAnalytics = () => {
           </CardContent>
         </Card>
 
-        {/* Training Comparison Doughnut - LARGER */}
+        {/* Training Comparison Doughnut */}
         <Card className="border-0 shadow-lg bg-white">
           <CardHeader className="pb-4">
             <CardTitle className="font-display flex items-center gap-2 text-gray-800">
               <GraduationCap className="h-5 w-5 text-green-600" />
-              Training Status (Livestock Farmers)
+              Training Status
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={350}>
+            <ResponsiveContainer width="100%" height={300}>
               <PieChart>
                 <Pie
                   data={trainingComparisonData}
                   cx="50%"
                   cy="50%"
-                  innerRadius={80}
-                  outerRadius={120}
+                  innerRadius={70}
+                  outerRadius={100}
                   paddingAngle={2}
                   dataKey="value"
                   label={renderCustomizedLabel}
@@ -630,13 +634,13 @@ const LivestockFarmersAnalytics = () => {
             </ResponsiveContainer>
             <div className="text-center mt-2">
               <Badge variant="outline" className="bg-blue-50 text-blue-700 text-xs">
-                Total trained farmers in Capacity Building: {stats.totalTrainedFromCapacity}
+                Total trained: {stats.totalTrainedFromCapacity}
               </Badge>
             </div>
           </CardContent>
         </Card>
 
-        {/* Animal Census Doughnut - LARGER */}
+        {/* Animal Census Doughnut */}
         <Card className="border-0 shadow-lg bg-white">
           <CardHeader className="pb-4">
             <CardTitle className="font-display flex items-center gap-2 text-gray-800">
@@ -645,14 +649,14 @@ const LivestockFarmersAnalytics = () => {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={350}>
+            <ResponsiveContainer width="100%" height={300}>
               <PieChart>
                 <Pie
                   data={goatsData}
                   cx="50%"
                   cy="50%"
-                  innerRadius={80}
-                  outerRadius={120}
+                  innerRadius={70}
+                  outerRadius={100}
                   paddingAngle={2}
                   dataKey="value"
                   label={renderCustomizedLabel}
@@ -680,86 +684,110 @@ const LivestockFarmersAnalytics = () => {
           </CardContent>
         </Card>
 
-        {/* Regional Performance - Weekly Area Chart (Weeks 1-4 only) */}
+        {/* Regional Performance - Compact Multi-Region Chart */}
         <Card className="border-0 shadow-lg bg-white">
           <CardHeader className="pb-4">
             <CardTitle className="font-display flex items-center gap-2 text-gray-800">
-              <BarChart3 className="h-5 w-5 text-indigo-600" />
-              Regional Performance (Last 4 Weeks)
-              {regionalPerformanceData[0]?.region && (
-                <Badge variant="outline" className="ml-2 bg-indigo-50 text-indigo-700 text-xs">
-                  {regionalPerformanceData[0].region}
-                </Badge>
-              )}
+              <Map className="h-5 w-5 text-indigo-600" />
+              Regional Performance
+              <Badge variant="outline" className="ml-2 bg-indigo-50 text-indigo-700 text-xs">
+                Top {topRegions.length}
+              </Badge>
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={350}>
-              <AreaChart data={regionalPerformanceData}>
-                <defs>
-                  <linearGradient id="performanceGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor={COLORS.indigo} stopOpacity={0.8}/>
-                    <stop offset="95%" stopColor={COLORS.indigo} stopOpacity={0.1}/>
-                  </linearGradient>
-                </defs>
+            <ResponsiveContainer width="100%" height={300}>
+              <LineChart data={regionalPerformanceData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
                 <XAxis 
                   dataKey="name" 
-                  fontSize={12}
+                  fontSize={11}
                   tick={{ fill: '#6b7280' }}
                 />
                 <YAxis 
-                  fontSize={12} 
+                  fontSize={11} 
                   tick={{ fill: '#6b7280' }}
                   domain={[0, 100]}
                 />
                 <Tooltip 
-                  labelStyle={{ color: '#374151', fontWeight: 'bold' }}
+                  labelStyle={{ color: '#374151', fontWeight: 'bold', fontSize: '12px' }}
                   contentStyle={{ 
                     backgroundColor: 'white', 
                     border: '1px solid #e5e7eb',
-                    borderRadius: '8px'
+                    borderRadius: '6px',
                   }}
                   formatter={(value: number, name: string) => {
-                    if (name === "performance") {
-                      return [`${value}%`, "Performance Score"];
+                    const region = topRegions.find(reg => name === reg);
+                    if (region) {
+                      return [`${value}%`, `${region}`];
                     }
-                    return [value, name === "farmers" ? "Farmers" : "Trainings"];
+                    return [value, name];
                   }}
                 />
-                <Area
-                  type="monotone"
-                  dataKey="performance"
-                  stroke={COLORS.indigo}
-                  fillOpacity={1}
-                  fill="url(#performanceGradient)"
-                  strokeWidth={2}
-                  activeDot={{ r: 6, fill: COLORS.indigo }}
-                  name="performance"
+                <Legend 
+                  verticalAlign="top" 
+                  height={40}
+                  iconType="circle"
+                  iconSize={8}
+                  wrapperStyle={{ fontSize: '11px' }}
+                  formatter={(value) => (
+                    <span style={{ color: '#374151', fontSize: '11px', fontWeight: '500' }}>
+                      {value}
+                    </span>
+                  )}
                 />
-              </AreaChart>
+                
+                {/* Line charts for the main performance curves */}
+                {topRegions.map((region, index) => (
+                  <Line
+                    key={region}
+                    type="monotone"
+                    dataKey={region}
+                    stroke={regionColors[index]}
+                    strokeWidth={2}
+                    dot={{ 
+                      fill: regionColors[index], 
+                      strokeWidth: 1, 
+                      r: 3,
+                      stroke: 'white'
+                    }}
+                    activeDot={{ 
+                      r: 4, 
+                      fill: regionColors[index],
+                      stroke: 'white',
+                      strokeWidth: 1
+                    }}
+                    name={region}
+                  />
+                ))}
+              </LineChart>
             </ResponsiveContainer>
-            <div className="grid grid-cols-3 gap-4 mt-4 text-center">
-              <div>
-                <div className="text-2xl font-bold text-gray-900">
-                  {regionalPerformanceData.reduce((sum, week) => sum + week.farmers, 0)}
-                </div>
-                <div className="text-xs text-gray-500">Total Farmers</div>
-              </div>
-              <div>
-                <div className="text-2xl font-bold text-gray-900">
-                  {regionalPerformanceData.reduce((sum, week) => sum + week.training, 0)}
-                </div>
-                <div className="text-xs text-gray-500">Trainings</div>
-              </div>
-              <div>
-                <div className="text-2xl font-bold text-gray-900">
-                  {regionalPerformanceData.length > 0 
-                    ? Math.round(regionalPerformanceData.reduce((sum, week) => sum + week.performance, 0) / regionalPerformanceData.length)
-                    : 0}%
-                </div>
-                <div className="text-xs text-gray-500">Avg Performance</div>
-              </div>
+            
+            {/* Compact Regional Performance Summary */}
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              {topRegions.map((region, index) => {
+                const regionData = regionalPerformanceData.map(week => week[region] || 0);
+                const avgPerformance = regionData.length > 0 
+                  ? Math.round(regionData.reduce((sum, perf) => sum + perf, 0) / regionData.length)
+                  : 0;
+
+                return (
+                  <div key={region} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
+                    <div className="flex items-center gap-2">
+                      <div 
+                        className="w-2 h-2 rounded-full" 
+                        style={{ backgroundColor: regionColors[index] }}
+                      />
+                      <span className="text-xs font-medium text-gray-700 truncate">
+                        {region}
+                      </span>
+                    </div>
+                    <Badge variant="secondary" className="text-xs bg-white text-gray-700">
+                      {avgPerformance}%
+                    </Badge>
+                  </div>
+                );
+              })}
             </div>
           </CardContent>
         </Card>

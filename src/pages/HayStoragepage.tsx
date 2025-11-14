@@ -9,28 +9,21 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
-import { Download, Users, MapPin, Eye, Calendar, Sprout, Globe, LayoutGrid } from "lucide-react";
+import { Download, Warehouse, MapPin, Eye, Calendar, Building, Globe, Users } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 // Types
-interface FodderFarmer {
+interface Infrastructure {
   id: string;
   date: any;
-  landSize?: number;
   location?: string;
-  model?: string;
   region?: string;
-  totalAcresPasture?: number;
-  totalBales?: number;
-  yieldPerHarvest?: number;
-  farmers?: Farmer[];
-}
-
-interface Farmer {
-  id: string;
-  name?: string;
-  phone?: string;
-  gender?: string;
+  type?: string;
+  capacity?: number;
+  currentStock?: number;
+  status?: string;
+  manager?: string;
+  contact?: string;
 }
 
 interface Filters {
@@ -39,13 +32,15 @@ interface Filters {
   endDate: string;
   location: string;
   region: string;
-  model: string;
+  type: string;
+  status: string;
 }
 
 interface Stats {
-  totalFarmers: number;
+  totalFacilities: number;
   totalRegions: number;
-  totalModels: number;
+  totalTypes: number;
+  totalCapacity: number;
 }
 
 interface Pagination {
@@ -105,16 +100,16 @@ const getCurrentMonthDates = () => {
   };
 };
 
-const FodderFarmersPage = () => {
+const HayStoragePage = () => {
   const { userRole } = useAuth();
   const { toast } = useToast();
-  const [allFodder, setAllFodder] = useState<FodderFarmer[]>([]);
-  const [filteredFodder, setFilteredFodder] = useState<FodderFarmer[]>([]);
+  const [allInfrastructure, setAllInfrastructure] = useState<Infrastructure[]>([]);
+  const [filteredInfrastructure, setFilteredInfrastructure] = useState<Infrastructure[]>([]);
   const [loading, setLoading] = useState(true);
   const [exportLoading, setExportLoading] = useState(false);
   const [selectedRecords, setSelectedRecords] = useState<string[]>([]);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
-  const [viewingRecord, setViewingRecord] = useState<FodderFarmer | null>(null);
+  const [viewingRecord, setViewingRecord] = useState<Infrastructure | null>(null);
   
   const currentMonth = useMemo(getCurrentMonthDates, []);
 
@@ -124,13 +119,15 @@ const FodderFarmersPage = () => {
     endDate: currentMonth.endDate,
     location: "all",
     region: "all",
-    model: "all"
+    type: "all",
+    status: "all"
   });
 
   const [stats, setStats] = useState<Stats>({
-    totalFarmers: 0,
+    totalFacilities: 0,
     totalRegions: 0,
-    totalModels: 0
+    totalTypes: 0,
+    totalCapacity: 0
   });
 
   const [pagination, setPagination] = useState<Pagination>({
@@ -145,22 +142,22 @@ const FodderFarmersPage = () => {
   const fetchAllData = useCallback(async () => {
     try {
       setLoading(true);
-      console.log("Starting data fetch...");
+      console.log("Starting infrastructure data fetch...");
       
       const data = await fetchData();
       console.log("Raw fetched data:", data);
-      console.log("Fodder data structure:", data.fodder);
+      console.log("Infrastructure data structure:", data.infrastructure);
 
-      if (!data.fodder) {
-        console.warn("No fodder data found in response");
-        setAllFodder([]);
+      if (!data.infrastructure) {
+        console.warn("No infrastructure data found in response");
+        setAllInfrastructure([]);
         return;
       }
 
-      const fodderData = Array.isArray(data.fodder) ? data.fodder.map((item: any, index: number) => {
-        console.log(`Processing item ${index}:`, item);
+      const infrastructureData = Array.isArray(data.infrastructure) ? data.infrastructure.map((item: any, index: number) => {
+        console.log(`Processing infrastructure item ${index}:`, item);
         
-        // Handle date parsing more robustly
+        // Handle date parsing
         let dateValue = item.date || item.Date || item.createdAt || item.timestamp;
         
         // If it's a Firestore timestamp object
@@ -174,33 +171,33 @@ const FodderFarmersPage = () => {
           }
         }
 
-        // Handle different field name variations
+        // Handle different field name variations for infrastructure
         const processedItem = {
           id: item.id || `temp-${index}-${Date.now()}`,
           date: dateValue,
-          landSize: Number(item.landSize || item.LandSize || 0),
           location: item.location || item.Location || item.area || item.Area || '',
-          model: item.model || item.Model || '',
           region: item.region || item.Region || item.county || item.County || '',
-          totalAcresPasture: Number(item.totalAcresPasture || item.TotalAcresPasture || 0),
-          totalBales: Number(item.totalBales || item.TotalBales || 0),
-          yieldPerHarvest: Number(item.yieldPerHarvest || item.YieldPerHarvest || 0),
-          farmers: Array.isArray(item.farmers) ? item.farmers : []
+          type: item.type || item.Type || item.facilityType || item.FacilityType || '',
+          capacity: Number(item.capacity || item.Capacity || item.storageCapacity || item.StorageCapacity || 0),
+          currentStock: Number(item.currentStock || item.CurrentStock || item.stock || item.Stock || 0),
+          status: item.status || item.Status || item.condition || item.Condition || '',
+          manager: item.manager || item.Manager || item.contactPerson || item.ContactPerson || '',
+          contact: item.contact || item.Contact || item.phone || item.Phone || item.telephone || item.Telephone || ''
         };
 
-        console.log(`Processed item ${index}:`, processedItem);
+        console.log(`Processed infrastructure item ${index}:`, processedItem);
         return processedItem;
 
       }) : [];
 
-      console.log("Final processed data:", fodderData);
-      setAllFodder(fodderData);
+      console.log("Final processed infrastructure data:", infrastructureData);
+      setAllInfrastructure(infrastructureData);
       
     } catch (error) {
-      console.error("Error fetching fodder data:", error);
+      console.error("Error fetching infrastructure data:", error);
       toast({
         title: "Error",
-        description: "Failed to load data from database",
+        description: "Failed to load infrastructure data from database",
         variant: "destructive",
       });
     } finally {
@@ -210,20 +207,21 @@ const FodderFarmersPage = () => {
 
   // Filter application
   const applyFilters = useCallback(() => {
-    if (allFodder.length === 0) {
-      console.log("No data to filter");
-      setFilteredFodder([]);
+    if (allInfrastructure.length === 0) {
+      console.log("No infrastructure data to filter");
+      setFilteredInfrastructure([]);
       setStats({
-        totalFarmers: 0,
+        totalFacilities: 0,
         totalRegions: 0,
-        totalModels: 0
+        totalTypes: 0,
+        totalCapacity: 0
       });
       return;
     }
 
-    console.log("Applying filters to", allFodder.length, "records");
+    console.log("Applying filters to", allInfrastructure.length, "infrastructure records");
     
-    let filtered = allFodder.filter(record => {
+    let filtered = allInfrastructure.filter(record => {
       // Region filter
       if (filters.region !== "all" && record.region?.toLowerCase() !== filters.region.toLowerCase()) {
         return false;
@@ -234,8 +232,13 @@ const FodderFarmersPage = () => {
         return false;
       }
 
-      // Model filter
-      if (filters.model !== "all" && record.model?.toLowerCase() !== filters.model.toLowerCase()) {
+      // Type filter
+      if (filters.type !== "all" && record.type?.toLowerCase() !== filters.type.toLowerCase()) {
+        return false;
+      }
+
+      // Status filter
+      if (filters.status !== "all" && record.status?.toLowerCase() !== filters.status.toLowerCase()) {
         return false;
       }
 
@@ -263,7 +266,11 @@ const FodderFarmersPage = () => {
       if (filters.search) {
         const searchTerm = filters.search.toLowerCase();
         const searchMatch = [
-          record.location, record.region, record.model
+          record.location, 
+          record.region, 
+          record.type,
+          record.status,
+          record.manager
         ].some(field => field?.toLowerCase().includes(searchTerm));
         if (!searchMatch) return false;
       }
@@ -271,23 +278,23 @@ const FodderFarmersPage = () => {
       return true;
     });
 
-    console.log("Filtered to", filtered.length, "records");
-    setFilteredFodder(filtered);
+    console.log("Filtered to", filtered.length, "infrastructure records");
+    setFilteredInfrastructure(filtered);
     
     // Update stats
-    const totalFarmers = filtered.reduce((sum, record) => 
-      sum + (record.farmers?.length || 0), 0);
+    const totalCapacity = filtered.reduce((sum, record) => sum + (record.capacity || 0), 0);
     
-    // Count unique regions and models from filtered data
+    // Count unique regions and types from filtered data
     const uniqueRegions = new Set(filtered.map(f => f.region).filter(Boolean));
-    const uniqueModels = new Set(filtered.map(f => f.model).filter(Boolean));
+    const uniqueTypes = new Set(filtered.map(f => f.type).filter(Boolean));
 
-    console.log("Stats - Total Farmers:", totalFarmers, "Regions:", uniqueRegions.size, "Models:", uniqueModels.size);
+    console.log("Stats - Total Facilities:", filtered.length, "Regions:", uniqueRegions.size, "Types:", uniqueTypes.size, "Capacity:", totalCapacity);
 
     setStats({
-      totalFarmers,
+      totalFacilities: filtered.length,
       totalRegions: uniqueRegions.size,
-      totalModels: uniqueModels.size
+      totalTypes: uniqueTypes.size,
+      totalCapacity
     });
 
     // Update pagination
@@ -298,7 +305,7 @@ const FodderFarmersPage = () => {
       hasNext: prev.page < totalPages,
       hasPrev: prev.page > 1
     }));
-  }, [allFodder, filters, pagination.limit]);
+  }, [allInfrastructure, filters, pagination.limit]);
 
   // Effects
   useEffect(() => {
@@ -323,7 +330,7 @@ const FodderFarmersPage = () => {
     try {
       setExportLoading(true);
       
-      if (filteredFodder.length === 0) {
+      if (filteredInfrastructure.length === 0) {
         toast({
           title: "No Data to Export",
           description: "There are no records matching your current filters",
@@ -332,19 +339,19 @@ const FodderFarmersPage = () => {
         return;
       }
 
-      const csvData = filteredFodder.map(record => [
+      const csvData = filteredInfrastructure.map(record => [
         formatDate(record.date),
         record.location || 'N/A',
         record.region || 'N/A',
-        record.model || 'N/A',
-        (record.farmers?.length || 0).toString(),
-        (record.landSize || 0).toString(),
-        (record.totalAcresPasture || 0).toString(),
-        (record.totalBales || 0).toString(),
-        (record.yieldPerHarvest || 0).toString()
+        record.type || 'N/A',
+        (record.capacity || 0).toString(),
+        (record.currentStock || 0).toString(),
+        record.status || 'N/A',
+        record.manager || 'N/A',
+        record.contact || 'N/A'
       ]);
 
-      const headers = ['Date', 'Location', 'Region', 'Model', 'Number of Farmers', 'Land Size', 'Total Acres Pasture', 'Total Bales', 'Yield per Harvest'];
+      const headers = ['Date', 'Location', 'Region', 'Type', 'Capacity', 'Current Stock', 'Status', 'Manager', 'Contact'];
       const csvContent = [headers, ...csvData]
         .map(row => row.map(field => `"${field}"`).join(','))
         .join('\n');
@@ -354,7 +361,7 @@ const FodderFarmersPage = () => {
       const link = document.createElement('a');
       link.href = url;
       
-      let filename = `fodder-farmers`;
+      let filename = `infrastructure-data`;
       if (filters.startDate || filters.endDate) {
         filename += `_${filters.startDate || 'start'}_to_${filters.endDate || 'end'}`;
       }
@@ -368,7 +375,7 @@ const FodderFarmersPage = () => {
 
       toast({
         title: "Export Successful",
-        description: `Exported ${filteredFodder.length} records with applied filters`,
+        description: `Exported ${filteredInfrastructure.length} infrastructure records`,
       });
 
     } catch (error) {
@@ -390,8 +397,8 @@ const FodderFarmersPage = () => {
   const getCurrentPageRecords = useCallback(() => {
     const startIndex = (pagination.page - 1) * pagination.limit;
     const endIndex = startIndex + pagination.limit;
-    return filteredFodder.slice(startIndex, endIndex);
-  }, [filteredFodder, pagination.page, pagination.limit]);
+    return filteredInfrastructure.slice(startIndex, endIndex);
+  }, [filteredInfrastructure, pagination.page, pagination.limit]);
 
   const handleSelectRecord = (recordId: string) => {
     setSelectedRecords(prev =>
@@ -408,29 +415,35 @@ const FodderFarmersPage = () => {
     );
   };
 
-  const openViewDialog = (record: FodderFarmer) => {
+  const openViewDialog = (record: Infrastructure) => {
     setViewingRecord(record);
     setIsViewDialogOpen(true);
   };
 
   // Memoized values
   const uniqueRegions = useMemo(() => {
-    const regions = [...new Set(allFodder.map(f => f.region).filter(Boolean))];
+    const regions = [...new Set(allInfrastructure.map(f => f.region).filter(Boolean))];
     console.log("Unique regions:", regions);
     return regions;
-  }, [allFodder]);
+  }, [allInfrastructure]);
 
   const uniqueLocations = useMemo(() => {
-    const locations = [...new Set(allFodder.map(f => f.location).filter(Boolean))];
+    const locations = [...new Set(allInfrastructure.map(f => f.location).filter(Boolean))];
     console.log("Unique locations:", locations);
     return locations;
-  }, [allFodder]);
+  }, [allInfrastructure]);
 
-  const uniqueModels = useMemo(() => {
-    const models = [...new Set(allFodder.map(f => f.model).filter(Boolean))];
-    console.log("Unique models:", models);
-    return models;
-  }, [allFodder]);
+  const uniqueTypes = useMemo(() => {
+    const types = [...new Set(allInfrastructure.map(f => f.type).filter(Boolean))];
+    console.log("Unique types:", types);
+    return types;
+  }, [allInfrastructure]);
+
+  const uniqueStatuses = useMemo(() => {
+    const statuses = [...new Set(allInfrastructure.map(f => f.status).filter(Boolean))];
+    console.log("Unique statuses:", statuses);
+    return statuses;
+  }, [allInfrastructure]);
 
   const currentPageRecords = useMemo(getCurrentPageRecords, [getCurrentPageRecords]);
 
@@ -441,7 +454,8 @@ const FodderFarmersPage = () => {
       endDate: "",
       location: "all",
       region: "all",
-      model: "all"
+      type: "all",
+      status: "all"
     });
   };
 
@@ -452,14 +466,14 @@ const FodderFarmersPage = () => {
   // Render components
   const StatsCard = ({ title, value, icon: Icon, description }: any) => (
     <Card className="bg-white text-slate-900 shadow-lg border border-gray-200 relative overflow-hidden">
-      <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-green-500 to-emerald-600"></div>
+      <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-blue-500 to-purple-600"></div>
       
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 pt-4 pl-6">
         <CardTitle className="text-sm font-medium text-slate-700">{title}</CardTitle>
       </CardHeader>
       <CardContent className="pl-6 pb-4 flex flex-row">
         <div className="mr-2 rounded-full">
-          <Icon className="h-8 w-8 text-green-600" />
+          <Icon className="h-8 w-8 text-blue-600" />
         </div>
         <div>
           <div className="text-2xl font-bold text-slate-900 mb-2">{value}</div>
@@ -474,22 +488,22 @@ const FodderFarmersPage = () => {
   );
 
   const FilterSection = () => (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
       <div className="space-y-2">
         <Label htmlFor="search" className="font-semibold text-gray-700">Search</Label>
         <Input
           id="search"
-          placeholder="Search records..."
+          placeholder="Search infrastructure..."
           value={filters.search}
           onChange={(e) => handleSearch(e.target.value)}
-          className="border-gray-300 focus:border-green-500 focus:ring-green-500 bg-white"
+          className="border-gray-300 focus:border-blue-500 focus:ring-blue-500 bg-white"
         />
       </div>
 
       <div className="space-y-2">
         <Label htmlFor="region" className="font-semibold text-gray-700">Region</Label>
         <Select value={filters.region} onValueChange={(value) => handleFilterChange("region", value)}>
-          <SelectTrigger className="border-gray-300 focus:border-green-500 focus:ring-green-500 bg-white">
+          <SelectTrigger className="border-gray-300 focus:border-blue-500 focus:ring-blue-500 bg-white">
             <SelectValue placeholder="Select region" />
           </SelectTrigger>
           <SelectContent>
@@ -502,30 +516,30 @@ const FodderFarmersPage = () => {
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="location" className="font-semibold text-gray-700">Location</Label>
-        <Select value={filters.location} onValueChange={(value) => handleFilterChange("location", value)}>
-          <SelectTrigger className="border-gray-300 focus:border-green-500 focus:ring-green-500 bg-white">
-            <SelectValue placeholder="Select location" />
+        <Label htmlFor="type" className="font-semibold text-gray-700">Facility Type</Label>
+        <Select value={filters.type} onValueChange={(value) => handleFilterChange("type", value)}>
+          <SelectTrigger className="border-gray-300 focus:border-blue-500 focus:ring-blue-500 bg-white">
+            <SelectValue placeholder="Select type" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Locations</SelectItem>
-            {uniqueLocations.slice(0, 20).map(location => (
-              <SelectItem key={location} value={location}>{location}</SelectItem>
+            <SelectItem value="all">All Types</SelectItem>
+            {uniqueTypes.slice(0, 20).map(type => (
+              <SelectItem key={type} value={type}>{type}</SelectItem>
             ))}
           </SelectContent>
         </Select>
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="model" className="font-semibold text-gray-700">Model</Label>
-        <Select value={filters.model} onValueChange={(value) => handleFilterChange("model", value)}>
-          <SelectTrigger className="border-gray-300 focus:border-green-500 focus:ring-green-500 bg-white">
-            <SelectValue placeholder="Select model" />
+        <Label htmlFor="status" className="font-semibold text-gray-700">Status</Label>
+        <Select value={filters.status} onValueChange={(value) => handleFilterChange("status", value)}>
+          <SelectTrigger className="border-gray-300 focus:border-blue-500 focus:ring-blue-500 bg-white">
+            <SelectValue placeholder="Select status" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Models</SelectItem>
-            {uniqueModels.slice(0, 20).map(model => (
-              <SelectItem key={model} value={model}>{model}</SelectItem>
+            <SelectItem value="all">All Status</SelectItem>
+            {uniqueStatuses.slice(0, 20).map(status => (
+              <SelectItem key={status} value={status}>{status}</SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -538,7 +552,7 @@ const FodderFarmersPage = () => {
           type="date"
           value={filters.startDate}
           onChange={(e) => handleFilterChange("startDate", e.target.value)}
-          className="border-gray-300 focus:border-green-500 focus:ring-green-500 bg-white"
+          className="border-gray-300 focus:border-blue-500 focus:ring-blue-500 bg-white"
         />
       </div>
 
@@ -549,17 +563,17 @@ const FodderFarmersPage = () => {
           type="date"
           value={filters.endDate}
           onChange={(e) => handleFilterChange("endDate", e.target.value)}
-          className="border-gray-300 focus:border-green-500 focus:ring-green-500 bg-white"
+          className="border-gray-300 focus:border-blue-500 focus:ring-blue-500 bg-white"
         />
       </div>
     </div>
   );
 
-  const TableRow = ({ record }: { record: FodderFarmer }) => {
-    const farmerCount = record.farmers?.length || 0;
+  const TableRow = ({ record }: { record: Infrastructure }) => {
+    const utilizationRate = record.capacity ? ((record.currentStock || 0) / record.capacity * 100).toFixed(1) : '0';
     
     return (
-      <tr className="border-b hover:bg-green-50 transition-colors duration-200 group text-sm">
+      <tr className="border-b hover:bg-blue-50 transition-colors duration-200 group text-sm">
         <td className="py-3 px-4">
           <Checkbox
             checked={selectedRecords.includes(record.id)}
@@ -570,16 +584,23 @@ const FodderFarmersPage = () => {
         <td className="py-3 px-4">{record.location || 'N/A'}</td>
         <td className="py-3 px-4">{record.region || 'N/A'}</td>
         <td className="py-3 px-4">
-          <Badge className="bg-blue-100 text-blue-800">
-            {record.model || 'N/A'}
+          <Badge className="bg-purple-100 text-purple-800">
+            {record.type || 'N/A'}
           </Badge>
         </td>
-        <td className="py-3 px-4">{record.landSize || 0}</td>
-        <td className="py-3 px-4">{record.totalAcresPasture || 0}</td>
-        <td className="py-3 px-4">{record.totalBales || 0}</td>
-        <td className="py-3 px-4">{record.yieldPerHarvest || 0}</td>
+        <td className="py-3 px-4">{record.capacity || 0}</td>
+        <td className="py-3 px-4">{record.currentStock || 0}</td>
         <td className="py-3 px-4">
-          <span className="font-bold text-gray-700">{farmerCount}</span>
+          <Badge className={
+            record.status?.toLowerCase() === 'operational' ? 'bg-green-100 text-green-800' :
+            record.status?.toLowerCase() === 'under maintenance' ? 'bg-yellow-100 text-yellow-800' :
+            'bg-red-100 text-red-800'
+          }>
+            {record.status || 'N/A'}
+          </Badge>
+        </td>
+        <td className="py-3 px-4">
+          <span className="font-bold text-gray-700">{utilizationRate}%</span>
         </td>
         <td className="py-3 px-4">
           <div className="flex gap-2">
@@ -587,9 +608,9 @@ const FodderFarmersPage = () => {
               variant="outline"
               size="sm"
               onClick={() => openViewDialog(record)}
-              className="h-8 w-8 p-0 hover:bg-green-50 hover:text-green-600 border-green-200"
+              className="h-8 w-8 p-0 hover:bg-blue-50 hover:text-blue-600 border-blue-200"
             >
-              <Eye className="h-4 w-4 text-green-500" />
+              <Eye className="h-4 w-4 text-blue-500" />
             </Button>
           </div>
         </td>
@@ -602,12 +623,12 @@ const FodderFarmersPage = () => {
       {/* Header with Action Buttons */}
       <div className="flex md:flex-row flex-col justify-between items-start sm:items-center gap-4">
         <div>
-          <h2 className="text-2xl font-bold mb-2 bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent">
-            Fodder Farmers
+          <h2 className="text-2xl font-bold mb-2 bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+            Infrastructure Data
           </h2>
-          <p className="text-muted-foreground">Manage fodder farmer records</p>
+          <p className="text-muted-foreground">Manage infrastructure and hay storage records</p>
           <p className="text-sm text-gray-500">
-            Loaded {allFodder.length} records • Showing {filteredFodder.length} after filters
+            Loaded {allInfrastructure.length} facilities • Showing {filteredInfrastructure.length} after filters
           </p>
         </div>
 
@@ -630,22 +651,22 @@ const FodderFarmersPage = () => {
           </Button>
           <Button 
             onClick={handleExport} 
-            disabled={exportLoading || filteredFodder.length === 0}
-            className="bg-gradient-to-r from-green-600 to-emerald-700 hover:from-green-700 hover:to-emerald-800 text-white shadow-md text-xs"
+            disabled={exportLoading || filteredInfrastructure.length === 0}
+            className="bg-gradient-to-r from-blue-600 to-purple-700 hover:from-blue-700 hover:to-purple-800 text-white shadow-md text-xs"
           >
             <Download className="h-4 w-4 mr-2" />
-            {exportLoading ? "Exporting..." : `Export (${filteredFodder.length})`}
+            {exportLoading ? "Exporting..." : `Export (${filteredInfrastructure.length})`}
           </Button>
         </div>
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <StatsCard 
-          title="Total Farmers" 
-          value={stats.totalFarmers} 
-          icon={Users}
-          description="Across all records"
+          title="Total Facilities" 
+          value={stats.totalFacilities} 
+          icon={Warehouse}
+          description="Infrastructure facilities"
         />
 
         <StatsCard 
@@ -656,10 +677,17 @@ const FodderFarmersPage = () => {
         />
 
         <StatsCard 
-          title="Models" 
-          value={stats.totalModels} 
-          icon={LayoutGrid}
-          description="Different farming models"
+          title="Facility Types" 
+          value={stats.totalTypes} 
+          icon={Building}
+          description="Different facility types"
+        />
+
+        <StatsCard 
+          title="Total Capacity" 
+          value={stats.totalCapacity.toLocaleString()} 
+          icon={Users}
+          description="Total storage capacity"
         />
       </div>
 
@@ -675,19 +703,19 @@ const FodderFarmersPage = () => {
         <CardContent className="p-0">
           {loading ? (
             <div className="text-center py-12">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600 mx-auto"></div>
-              <p className="text-muted-foreground mt-2">Loading fodder data...</p>
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+              <p className="text-muted-foreground mt-2">Loading infrastructure data...</p>
             </div>
           ) : currentPageRecords.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
-              {allFodder.length === 0 ? "No fodder data found in database" : "No records found matching your criteria"}
+              {allInfrastructure.length === 0 ? "No infrastructure data found in database" : "No records found matching your criteria"}
             </div>
           ) : (
             <>
               <div className="w-full overflow-x-auto rounded-md">
                 <table className="w-full border-collapse border border-gray-300 text-sm text-left">
                   <thead className="rounded">
-                    <tr className="bg-green-100">
+                    <tr className="bg-blue-100">
                       <th className="py-3 px-4">
                         <Checkbox
                           checked={selectedRecords.length === currentPageRecords.length && currentPageRecords.length > 0}
@@ -697,12 +725,11 @@ const FodderFarmersPage = () => {
                       <th className="py-3 px-4 font-medium text-gray-600">Date</th>
                       <th className="py-3 px-4 font-medium text-gray-600">Location</th>
                       <th className="py-3 px-4 font-medium text-gray-600">Region</th>
-                      <th className="py-3 px-4 font-medium text-gray-600">Model</th>
-                      <th className="py-3 px-4 font-medium text-gray-600">Land Size</th>
-                      <th className="py-3 px-4 font-medium text-gray-600">Pasture Acres</th>
-                      <th className="py-3 px-4 font-medium text-gray-600">Total Bales</th>
-                      <th className="py-3 px-4 font-medium text-gray-600">Yield/Harvest</th>
-                      <th className="py-3 px-4 font-medium text-gray-600">Farmers</th>
+                      <th className="py-3 px-4 font-medium text-gray-600">Type</th>
+                      <th className="py-3 px-4 font-medium text-gray-600">Capacity</th>
+                      <th className="py-3 px-4 font-medium text-gray-600">Current Stock</th>
+                      <th className="py-3 px-4 font-medium text-gray-600">Status</th>
+                      <th className="py-3 px-4 font-medium text-gray-600">Utilization</th>
                       <th className="py-3 px-4 font-medium text-gray-600">Actions</th>
                     </tr>
                   </thead>
@@ -717,7 +744,7 @@ const FodderFarmersPage = () => {
               {/* Pagination */}
               <div className="flex items-center justify-between p-4 border-t bg-gray-50">
                 <div className="text-sm text-muted-foreground">
-                  {filteredFodder.length} total records • {currentPageRecords.length} on this page
+                  {filteredInfrastructure.length} total records • {currentPageRecords.length} on this page
                 </div>
                 <div className="flex gap-2">
                   <Button
@@ -750,11 +777,11 @@ const FodderFarmersPage = () => {
         <DialogContent className="sm:max-w-2xl bg-white rounded-2xl max-h-[90vh] overflow-hidden">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-slate-900">
-              <Eye className="h-5 w-5 text-green-600" />
-              Fodder Farmer Details
+              <Eye className="h-5 w-5 text-blue-600" />
+              Infrastructure Details
             </DialogTitle>
             <DialogDescription>
-              Complete information for this fodder farming record
+              Complete information for this infrastructure facility
             </DialogDescription>
           </DialogHeader>
           {viewingRecord && (
@@ -762,7 +789,7 @@ const FodderFarmersPage = () => {
               {/* Basic Information */}
               <div className="bg-slate-50 rounded-xl p-4">
                 <h3 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
-                  <Sprout className="h-4 w-4" />
+                  <Building className="h-4 w-4" />
                   Basic Information
                 </h3>
                 <div className="grid grid-cols-2 gap-4">
@@ -779,80 +806,69 @@ const FodderFarmersPage = () => {
                     <p className="text-slate-900 font-medium">{viewingRecord.region || 'N/A'}</p>
                   </div>
                   <div>
-                    <Label className="text-sm font-medium text-slate-600">Model</Label>
-                    <Badge className="bg-blue-100 text-blue-800">{viewingRecord.model || 'N/A'}</Badge>
+                    <Label className="text-sm font-medium text-slate-600">Type</Label>
+                    <Badge className="bg-purple-100 text-purple-800">{viewingRecord.type || 'N/A'}</Badge>
                   </div>
                 </div>
               </div>
 
-              {/* Land Information */}
+              {/* Capacity Information */}
               <div className="bg-slate-50 rounded-xl p-4">
                 <h3 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
-                  <MapPin className="h-4 w-4" />
-                  Land Information
+                  <Warehouse className="h-4 w-4" />
+                  Capacity Information
                 </h3>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <Label className="text-sm font-medium text-slate-600">Land Size</Label>
-                    <p className="text-slate-900 font-medium">{(viewingRecord.landSize || 0).toLocaleString()} acres</p>
+                    <Label className="text-sm font-medium text-slate-600">Total Capacity</Label>
+                    <p className="text-slate-900 font-medium">{(viewingRecord.capacity || 0).toLocaleString()} units</p>
                   </div>
                   <div>
-                    <Label className="text-sm font-medium text-slate-600">Total Acres Pasture</Label>
-                    <p className="text-slate-900 font-medium">{(viewingRecord.totalAcresPasture || 0).toLocaleString()} acres</p>
+                    <Label className="text-sm font-medium text-slate-600">Current Stock</Label>
+                    <p className="text-slate-900 font-medium">{(viewingRecord.currentStock || 0).toLocaleString()} units</p>
                   </div>
-                </div>
-              </div>
-
-              {/* Production Information */}
-              <div className="bg-slate-50 rounded-xl p-4">
-                <h3 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
-                  <Calendar className="h-4 w-4" />
-                  Production Information
-                </h3>
-                <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <Label className="text-sm font-medium text-slate-600">Total Bales</Label>
+                    <Label className="text-sm font-medium text-slate-600">Utilization Rate</Label>
                     <p className="text-slate-900 font-medium text-lg font-bold">
-                      {(viewingRecord.totalBales || 0).toLocaleString()}
+                      {viewingRecord.capacity ? 
+                        `${((viewingRecord.currentStock || 0) / viewingRecord.capacity * 100).toFixed(1)}%` : 
+                        '0%'
+                      }
                     </p>
                   </div>
                   <div>
-                    <Label className="text-sm font-medium text-slate-600">Yield per Harvest</Label>
-                    <p className="text-slate-900 font-medium">{(viewingRecord.yieldPerHarvest || 0).toLocaleString()}</p>
+                    <Label className="text-sm font-medium text-slate-600">Status</Label>
+                    <Badge className={
+                      viewingRecord.status?.toLowerCase() === 'operational' ? 'bg-green-100 text-green-800' :
+                      viewingRecord.status?.toLowerCase() === 'under maintenance' ? 'bg-yellow-100 text-yellow-800' :
+                      'bg-red-100 text-red-800'
+                    }>
+                      {viewingRecord.status || 'N/A'}
+                    </Badge>
                   </div>
                 </div>
               </div>
 
-              {/* Farmers List */}
-              {viewingRecord.farmers && viewingRecord.farmers.length > 0 && (
+              {/* Contact Information */}
+              {(viewingRecord.manager || viewingRecord.contact) && (
                 <div className="bg-slate-50 rounded-xl p-4">
                   <h3 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
                     <Users className="h-4 w-4" />
-                    Associated Farmers ({viewingRecord.farmers.length})
+                    Contact Information
                   </h3>
-                  <div className="space-y-3 max-h-40 overflow-y-auto">
-                    {viewingRecord.farmers.map((farmer, index) => (
-                      <div key={farmer.id || index} className="border border-slate-200 rounded-lg p-3 bg-white">
-                        <div className="grid grid-cols-2 gap-4">
-                          <div>
-                            <Label className="text-sm font-medium text-slate-600">Name</Label>
-                            <p className="text-slate-900 font-medium">{farmer.name || 'N/A'}</p>
-                          </div>
-                          <div>
-                            <Label className="text-sm font-medium text-slate-600">Gender</Label>
-                            <p className="text-slate-900 font-medium">{farmer.gender || 'N/A'}</p>
-                          </div>
-                          <div>
-                            <Label className="text-sm font-medium text-slate-600">Phone</Label>
-                            <p className="text-slate-900 font-medium">{farmer.phone || 'N/A'}</p>
-                          </div>
-                          <div>
-                            <Label className="text-sm font-medium text-slate-600">Farmer ID</Label>
-                            <p className="text-slate-900 font-medium font-mono">{farmer.id || 'N/A'}</p>
-                          </div>
-                        </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    {viewingRecord.manager && (
+                      <div>
+                        <Label className="text-sm font-medium text-slate-600">Manager</Label>
+                        <p className="text-slate-900 font-medium">{viewingRecord.manager}</p>
                       </div>
-                    ))}
+                    )}
+                    {viewingRecord.contact && (
+                      <div>
+                        <Label className="text-sm font-medium text-slate-600">Contact</Label>
+                        <p className="text-slate-900 font-medium">{viewingRecord.contact}</p>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -861,7 +877,7 @@ const FodderFarmersPage = () => {
           <DialogFooter>
             <Button 
               onClick={() => setIsViewDialogOpen(false)}
-              className="bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white"
+              className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white"
             >
               Close
             </Button>
@@ -872,4 +888,4 @@ const FodderFarmersPage = () => {
   );
 };
 
-export default FodderFarmersPage;
+export default HayStoragePage;

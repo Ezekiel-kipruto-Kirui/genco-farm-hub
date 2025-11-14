@@ -13,7 +13,8 @@ import LivestockFarmersPage from "./pages/LivestockFarmersPage";
 import LivestockFarmersAnalytics from "./pages/LivestockFarmersAnalytics";
 import FodderFarmersPage from "./pages/FodderFarmersPage";
 
-import InfrastructurePage from "./pages/InfrastructurePage";
+import InfrastructurePage from "./pages/BoreHole";
+import HayStoragepage from "./pages/HayStoragepage";
 
 import CapacityBuildingPage from "./pages/CapacityBuildingPage";
 
@@ -50,8 +51,8 @@ const App = () => (
               <Route path="livestock/analytics" element={<LivestockFarmersAnalytics />} />
               <Route path="fodder" element={<FodderFarmersPage />} />
               
-              <Route path="infrastructure" element={<InfrastructurePage />} />
-              
+              <Route path="BoreHole" element={<InfrastructurePage />} />
+              <Route path="HayStoragepage" element={<HayStoragepage/>}/>
               <Route path="capacity" element={<CapacityBuildingPage />} />
               
               <Route path="livestock-offtake" element={<LivestockOfftakePage />} />
