@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { collection, getDocs, query, updateDoc, doc, deleteDoc, writeBatch } from "firebase/firestore";
-import { db,fetchData } from "@/lib/firebase";
+import { db, fetchData } from "@/lib/firebase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -74,7 +74,6 @@ interface TrainingRecord {
 }
 
 interface Filters {
-  search: string;
   gender: string;
   startDate: string;
   endDate: string;
@@ -163,6 +162,23 @@ const formatDate = (date: any): string => {
   return parsedDate ? parsedDate.toLocaleDateString() : 'N/A';
 };
 
+// Debounce hook
+const useDebounce = (value: string, delay: number) => {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value);
+    }, delay);
+
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [value, delay]);
+
+  return debouncedValue;
+};
+
 const LivestockFarmersPage = () => {
   const { userRole } = useAuth();
   const { toast } = useToast();
@@ -179,9 +195,13 @@ const LivestockFarmersPage = () => {
   const [deleteLoading, setDeleteLoading] = useState(false);
   
   const currentMonth = useMemo(getCurrentMonthDates, []);
+  
+  // Search state - completely separate from filters
+  const [searchValue, setSearchValue] = useState("");
+  const debouncedSearch = useDebounce(searchValue, 300);
 
+  // Filters state - without search
   const [filters, setFilters] = useState<Filters>({
-    search: "",
     gender: "all",
     startDate: currentMonth.startDate,
     endDate: currentMonth.endDate,
@@ -217,6 +237,7 @@ const LivestockFarmersPage = () => {
     trained: false,
     trainingDate: ""
   });
+
   // Data fetching
   const fetchAllData = useCallback(async () => {
     try {
@@ -225,7 +246,7 @@ const LivestockFarmersPage = () => {
       // Fetch livestock farmers
       const farmersQuery = query(collection(db, "Livestock Farmers"));
       const farmersSnapshot = await getDocs(farmersQuery);
-      console.log(farmersSnapshot)
+      
       // Fetch training records from Capacity Building
       const trainingQuery = query(collection(db, "Capacity Building"));
       const trainingSnapshot = await getDocs(trainingQuery);
@@ -358,46 +379,44 @@ const LivestockFarmersPage = () => {
     return trainingRecord || null;
   }, [trainingRecords]);
 
-  // Filter application
-  const applyFilters = useCallback(() => {
-    if (allFarmers.length === 0) return;
-
-    let filtered = allFarmers.filter(farmer => {
+  // Main filtering logic - completely separated from state updates
+  const filterAndProcessData = useCallback((farmers: Farmer[], searchTerm: string, filterParams: Filters) => {
+    const filtered = farmers.filter(farmer => {
       // Gender filter
-      if (filters.gender !== "all" && farmer.gender?.toLowerCase() !== filters.gender.toLowerCase()) {
+      if (filterParams.gender !== "all" && farmer.gender?.toLowerCase() !== filterParams.gender.toLowerCase()) {
         return false;
       }
 
       // Region filter
-      if (filters.region !== "all" && farmer.region?.toLowerCase() !== filters.region.toLowerCase()) {
+      if (filterParams.region !== "all" && farmer.region?.toLowerCase() !== filterParams.region.toLowerCase()) {
         return false;
       }
 
       // Location filter (dependent on region)
-      if (filters.location !== "all") {
-        if (filters.region !== "all") {
+      if (filterParams.location !== "all") {
+        if (filterParams.region !== "all") {
           // If region is selected, location must match both region and location
-          if (farmer.region?.toLowerCase() !== filters.region.toLowerCase() || 
-              farmer.location?.toLowerCase() !== filters.location.toLowerCase()) {
+          if (farmer.region?.toLowerCase() !== filterParams.region.toLowerCase() || 
+              farmer.location?.toLowerCase() !== filterParams.location.toLowerCase()) {
             return false;
           }
         } else {
           // If no region selected, just match location
-          if (farmer.location?.toLowerCase() !== filters.location.toLowerCase()) {
+          if (farmer.location?.toLowerCase() !== filterParams.location.toLowerCase()) {
             return false;
           }
         }
       }
 
       // Date filter
-      if (filters.startDate || filters.endDate) {
+      if (filterParams.startDate || filterParams.endDate) {
         const farmerDate = parseDate(farmer.dateSubmitted) || parseDate(farmer.createdAt) || parseDate(farmer.date);
         if (farmerDate) {
           const farmerDateOnly = new Date(farmerDate);
           farmerDateOnly.setHours(0, 0, 0, 0);
 
-          const startDate = filters.startDate ? new Date(filters.startDate) : null;
-          const endDate = filters.endDate ? new Date(filters.endDate) : null;
+          const startDate = filterParams.startDate ? new Date(filterParams.startDate) : null;
+          const endDate = filterParams.endDate ? new Date(filterParams.endDate) : null;
           if (startDate) startDate.setHours(0, 0, 0, 0);
           if (endDate) endDate.setHours(23, 59, 59, 999);
 
@@ -406,22 +425,20 @@ const LivestockFarmersPage = () => {
         }
       }
 
-      // Search filter
-      if (filters.search) {
-        const searchTerm = filters.search.toLowerCase();
+      // Search filter - only apply if search term exists
+      if (searchTerm) {
+        const searchTermLower = searchTerm.toLowerCase();
         const searchMatch = [
           farmer.name, farmer.gender, farmer.farmerId, farmer.IdNo, 
           farmer.phone, farmer.phoneNo, farmer.location, farmer.vaccineType, farmer.trainingType
-        ].some(field => field?.toLowerCase().includes(searchTerm));
+        ].some(field => field?.toLowerCase().includes(searchTermLower));
         if (!searchMatch) return false;
       }
 
       return true;
     });
 
-    setFilteredFarmers(filtered);
-    
-    // Update stats - now using training records from Capacity Building
+    // Calculate stats
     const maleFarmers = filtered.filter(f => f.gender?.toLowerCase() === 'male').length;
     const femaleFarmers = filtered.filter(f => f.gender?.toLowerCase() === 'female').length;
     const totalGoats = filtered.reduce((sum, farmer) => 
@@ -430,39 +447,55 @@ const LivestockFarmersPage = () => {
     // Count trained farmers from Capacity Building records
     const trainedFarmers = filtered.filter(farmer => isFarmerTrained(farmer)).length;
 
-    setStats({
+    const calculatedStats = {
       totalFarmers: filtered.length,
       maleFarmers,
       femaleFarmers,
       totalGoats,
       trainedFarmers
-    });
+    };
 
-    // Update pagination
-    const totalPages = Math.ceil(filtered.length / pagination.limit);
+    // Calculate pagination
+    const totalPages = Math.ceil(filtered.length / PAGE_LIMIT);
+
+    return {
+      filteredFarmers: filtered,
+      stats: calculatedStats,
+      totalPages
+    };
+  }, [isFarmerTrained]);
+
+  // Effect to apply filters when data, search, or filters change
+  useEffect(() => {
+    if (allFarmers.length === 0) return;
+
+    const result = filterAndProcessData(allFarmers, debouncedSearch, filters);
+    
+    setFilteredFarmers(result.filteredFarmers);
+    setStats(result.stats);
+    
+    // Update pagination - FIXED: Calculate hasPrev based on current page
     setPagination(prev => ({
       ...prev,
-      totalPages,
-      hasNext: prev.page < totalPages,
+      totalPages: result.totalPages,
+      hasNext: prev.page < result.totalPages,
       hasPrev: prev.page > 1
     }));
-  }, [allFarmers, filters, pagination.limit, isFarmerTrained]);
+  }, [allFarmers, debouncedSearch, filters, filterAndProcessData]);
 
   // Effects
   useEffect(() => {
     fetchAllData();
   }, [fetchAllData]);
 
-  useEffect(() => {
-    applyFilters();
-  }, [applyFilters]);
+  // Search handler - only updates the search state
+  const handleSearch = useCallback((value: string) => {
+    setSearchValue(value);
+    setPagination(prev => ({ ...prev, page: 1 }));
+  }, []);
 
-  // Handlers
-  const handleSearch = (value: string) => {
-    setFilters(prev => ({ ...prev, search: value }));
-  };
-
-  const handleFilterChange = (key: keyof Filters, value: string) => {
+  // Filter change handler
+  const handleFilterChange = useCallback((key: keyof Filters, value: string) => {
     setFilters(prev => ({ 
       ...prev, 
       [key]: value,
@@ -470,9 +503,9 @@ const LivestockFarmersPage = () => {
       ...(key === 'region' && value !== 'all' ? { location: 'all' } : {})
     }));
     setPagination(prev => ({ ...prev, page: 1 }));
-  };
+  }, []);
 
-  const handleExport = async () => {
+  const handleExport = useCallback(async () => {
     try {
       setExportLoading(true);
       
@@ -567,11 +600,17 @@ const LivestockFarmersPage = () => {
     } finally {
       setExportLoading(false);
     }
-  };
+  }, [filteredFarmers, filters.startDate, filters.endDate, isFarmerTrained, getFarmerTrainingDetails, toast]);
 
-  const handlePageChange = (newPage: number) => {
-    setPagination(prev => ({ ...prev, page: newPage }));
-  };
+  // FIXED: Proper page change handler
+  const handlePageChange = useCallback((newPage: number) => {
+    setPagination(prev => ({ 
+      ...prev, 
+      page: newPage,
+      hasNext: newPage < prev.totalPages,
+      hasPrev: newPage > 1
+    }));
+  }, []);
 
   const getCurrentPageFarmers = useCallback(() => {
     const startIndex = (pagination.page - 1) * pagination.limit;
@@ -579,22 +618,22 @@ const LivestockFarmersPage = () => {
     return filteredFarmers.slice(startIndex, endIndex);
   }, [filteredFarmers, pagination.page, pagination.limit]);
 
-  const handleSelectFarmer = (farmerId: string) => {
+  const handleSelectFarmer = useCallback((farmerId: string) => {
     setSelectedFarmers(prev =>
       prev.includes(farmerId)
         ? prev.filter(id => id !== farmerId)
         : [...prev, farmerId]
     );
-  };
+  }, []);
 
-  const handleSelectAll = () => {
+  const handleSelectAll = useCallback(() => {
     const currentPageIds = getCurrentPageFarmers().map(f => f.id);
     setSelectedFarmers(prev =>
       prev.length === currentPageIds.length ? [] : currentPageIds
     );
-  };
+  }, [getCurrentPageFarmers]);
 
-  const openEditDialog = (farmer: Farmer) => {
+  const openEditDialog = useCallback((farmer: Farmer) => {
     setEditingFarmer(farmer);
     setEditForm({
       name: farmer.name || "",
@@ -609,18 +648,17 @@ const LivestockFarmersPage = () => {
       trainingDate: ""
     });
     setIsEditDialogOpen(true);
-  };
+  }, [isFarmerTrained]);
 
-  const openViewDialog = (farmer: Farmer) => {
+  const openViewDialog = useCallback((farmer: Farmer) => {
     setViewingFarmer(farmer);
     setIsViewDialogOpen(true);
-  };
+  }, []);
 
-  const handleEditSubmit = async () => {
+  const handleEditSubmit = useCallback(async () => {
     if (!editingFarmer) return;
     
     try {
-      
       const farmerRef = doc(db, "Livestock Farmers", editingFarmer.id);
     
       const updateData = {
@@ -663,9 +701,9 @@ const LivestockFarmersPage = () => {
         variant: "destructive",
       });
     }
-  };
+  }, [editingFarmer, editForm, fetchAllData, toast]);
 
-  const handleDeleteSelected = async () => {
+  const handleDeleteSelected = useCallback(async () => {
     if (selectedFarmers.length === 0) return;
 
     try {
@@ -696,7 +734,7 @@ const LivestockFarmersPage = () => {
     } finally {
       setDeleteLoading(false);
     }
-  };
+  }, [selectedFarmers, fetchAllData, toast]);
 
   // Memoized values
   const uniqueRegions = useMemo(() => 
@@ -719,59 +757,127 @@ const LivestockFarmersPage = () => {
 
   const currentPageFarmers = useMemo(getCurrentPageFarmers, [getCurrentPageFarmers]);
 
-  const clearAllFilters = () => {
+  const clearAllFilters = useCallback(() => {
+    setSearchValue("");
     setFilters({
-      search: "",
       gender: "all",
       startDate: "",
       endDate: "",
       location: "all",
       region: "all"
     });
-  };
+    setPagination(prev => ({ ...prev, page: 1 }));
+  }, []);
 
-  const resetToCurrentMonth = () => {
+  const resetToCurrentMonth = useCallback(() => {
     setFilters(prev => ({ ...prev, ...currentMonth }));
-  };
+    setPagination(prev => ({ ...prev, page: 1 }));
+  }, [currentMonth]);
 
-  // Render components
- const StatsCard = ({ title, value, icon: Icon, description, children }: any) => (
-  <Card className="bg-white text-slate-900 shadow-lg border border-gray-200 relative overflow-hidden">
-    {/* Left accent border */}
-    <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-blue-500 to-purple-600"></div>
+  // StatsCard component
+  const StatsCard = useCallback(({ title, value, icon: Icon, description, children }: any) => (
+    <Card className="bg-white text-slate-900 shadow-lg border border-gray-200 relative overflow-hidden">
+      <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-blue-500 to-purple-600"></div>
+      
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 pt-4 pl-6">
+        <CardTitle className="text-sm font-medium text-gray-400">{title}</CardTitle>
+      </CardHeader>
+      <CardContent className="pl-6 pb-4 flex flex-row">
+        <div className="mr-2 rounded-full">
+          <Icon className="h-8 w-8 text-blue-600" />
+        </div>
+        <div>
+          <div className="text-2xl font-bold text-green-500 mb-2">{value}</div>
+          {children}
+          {description && (
+            <p className="text-xs mt-2 bg-orange-50 px-2 py-1 rounded-md border border-slate-100">
+              {description}
+            </p>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  ), []);
+
+  // TableRow component
+  const TableRow = useCallback(({ farmer }: { farmer: Farmer }) => {
+    const totalGoats = (farmer.goatsMale || 0) + (farmer.goatsFemale || 0) + (farmer.maleGoats || 0) + (farmer.femaleGoats || 0);
+    const isTrained = isFarmerTrained(farmer);
+    const trainingDetails = getFarmerTrainingDetails(farmer);
     
-    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 pt-4 pl-6">
-      <CardTitle className="text-sm font-medium text-slate-700">{title}</CardTitle>
-      
-    </CardHeader>
-    <CardContent className="pl-6 pb-4 flex flex-row">
-      <div className="mr-2 rounded-full">
-        <Icon className="h-8 w-8 text-blue-600" />
-      </div>
-      <div>
-         <div className="text-2xl font-bold text-slate-900 mb-2">{value}</div>
-      
-      {children}
-      
-      {description && (
-        <p className="text-xs text-slate-600 mt-2 bg-slate-50 px-2 py-1 rounded-md border border-slate-100">
-          {description}
-        </p>
-      )}
-      </div>
-     
-    </CardContent>
-  </Card>
-);
+    return (
+      <tr className="border-b hover:bg-blue-50 transition-all duration-200 group text-sm">
+        <td className="py-2 px-4 ml-2">
+          <Checkbox
+            checked={selectedFarmers.includes(farmer.id)}
+            onCheckedChange={() => handleSelectFarmer(farmer.id)}
+          />
+        </td>
+        <td className="py-1 px-5 text-xs text-gray-600">{formatDate(farmer.dateSubmitted || farmer.createdAt)}</td>
+      <td className="py-1 px-5 text-xs text-gray-600">{farmer.name || 'N/A'}</td>
+        <td className="py-1 px-5 text-xs text-gray-600">{farmer.gender || 'N/A'}</td>
+        <td className="py-1 px-5 text-xs text-gray-600">
+          <code className="text-sm bg-gray-100 px-2 py-1 rounded text-gray-700">
+            {farmer.farmerId || farmer.IdNo || farmer.idNo || 'N/A'}
+          </code>
+        </td>
+        <td className="py-1 px-5 text-xs text-gray-600">{farmer.phone || farmer.phoneNo || 'N/A'}</td>
+        <td className="py-1 px-5 text-xs text-gray-600">{farmer.location || farmer.region || farmer.county || 'N/A'}</td>
+        <td className="py-1 px-5 text-xs text-gray-600">{farmer.region || 'N/A'}</td>
+        <td className="py-1 px-5 text-xs text-gray-600">
+          <span className="text-xs font-medium text-gray-600">{totalGoats}</span>
+        </td>
+        <td className="py-1 px-5 text-xs text-gray-600">{farmer.vaccineType || 'N/A'}</td>
+        <td className="py-1 px-5 text-xs text-gray-600">
+          {formatDate(farmer.vaccineDate || farmer.vaccinationDate)}
+        </td>
+        <td className="py-1 px-5 text-xs text-gray-600">
+          <Badge className={isTrained ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}>
+            {isTrained ? 'Trained' : 'Not Trained'}
+          </Badge>
+        </td>
+        <td className="py-1 px-5 text-xs text-gray-600">{farmer.numberOfBreeds || 0}</td>
+        <td className="py-1 px-5 text-xs text-gray-600">
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => openViewDialog(farmer)}
+              className="h-8 w-8 p-0 hover:bg-green-50 hover:text-green-600 border-green-200"
+            >
+              <Eye className="h-3 w-3 text-green-500" />
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => openEditDialog(farmer)}
+              className="h-8 w-8 p-0 hover:bg-blue-50 hover:text-blue-600 border-blue-200"
+            >
+              <Edit className="h-3 w-3 text-blue-500" />
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleSelectFarmer(farmer.id)}
+              className="h-8 w-8 p-0 hover:bg-red-50 hover:text-red-600 border-red-200"
+            >
+              <Trash2 className="h-3 w-3 text-red-500" />
+            </Button>
+          </div>
+        </td>
+      </tr>
+    );
+  }, [isFarmerTrained, getFarmerTrainingDetails, selectedFarmers, handleSelectFarmer, openViewDialog, openEditDialog]);
 
-  const FilterSection = () => (
+  // Memoized FilterSection component
+  const FilterSection = useMemo(() => (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
       <div className="space-y-2">
         <Label htmlFor="search" className="font-semibold text-gray-700">Search</Label>
         <Input
           id="search"
           placeholder="Search farmers..."
-          value={filters.search}
+          value={searchValue}
           onChange={(e) => handleSearch(e.target.value)}
           className="border-gray-300 focus:border-blue-500 focus:ring-blue-500 bg-white"
         />
@@ -851,79 +957,7 @@ const LivestockFarmersPage = () => {
         />
       </div>
     </div>
-  );
-
-  const TableRow = ({ farmer }: { farmer: Farmer }) => {
-    const totalGoats = (farmer.goatsMale || 0) + (farmer.goatsFemale || 0) + (farmer.maleGoats || 0) + (farmer.femaleGoats || 0);
-    const isTrained = isFarmerTrained(farmer);
-    const trainingDetails = getFarmerTrainingDetails(farmer);
-    
-    return (
-      <tr className="border-b hover:bg-blue-50 transition-all duration-200 group text-sm">
-        <td className="py-2 px-4 ml-2">
-          <Checkbox
-            checked={selectedFarmers.includes(farmer.id)}
-            onCheckedChange={() => handleSelectFarmer(farmer.id)}
-          />
-        </td>
-        <td className="py-2 px-4">{formatDate(farmer.dateSubmitted || farmer.createdAt)}</td>
-        <td className="py-2 px-4 text-sm">{farmer.name || 'N/A'}</td>
-        <td className="py-2 px-4">{farmer.gender || 'N/A'}</td>
-        <td className="py-2 px-4">
-          <code className="text-sm bg-gray-100 px-2 py-1 rounded text-gray-700">
-            {farmer.farmerId || farmer.IdNo || farmer.idNo || 'N/A'}
-          </code>
-        </td>
-        <td className="py-2 px-4 text-sm text-gray-600">{farmer.phone || farmer.phoneNo || 'N/A'}</td>
-        <td className="py-2 px-4">{farmer.location || farmer.region || farmer.county || 'N/A'}</td>
-        <td className="py-2 px-4">{farmer.region || 'N/A'}</td>
-        <td className="py-2 px-4">
-          <span className="text-xs font-bold text-gray-700">{totalGoats}</span>
-        </td>
-        <td className="py-2 px-4">{farmer.vaccineType || 'N/A'}</td>
-        <td className="py-2 px-4 text-sm text-gray-600">
-          {formatDate(farmer.vaccineDate || farmer.vaccinationDate)}
-        </td>
-        <td className="py-2 px-4">
-          <Badge className={isTrained ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}>
-            {isTrained ? 'Trained' : 'Not Trained'}
-          </Badge>
-        </td>
-        <td className="py-2 px-4">{farmer.numberOfBreeds || 0}</td>
-        <td className="py-2 px-4">
-         <div className="flex gap-2">
-  <Button
-    variant="outline"
-    size="sm"
-    onClick={() => openViewDialog(farmer)}
-    className="h-5 w-5 p-0 hover:bg-green-50 hover:text-green-600 border-green-200"
-  >
-    <Eye className="h-3 w-3 text-green-500" />
-  </Button>
-
-  <Button
-    variant="outline"
-    size="sm"
-    onClick={() => openEditDialog(farmer)}
-    className="h-5 w-5 p-0 hover:bg-blue-50 hover:text-blue-600 border-blue-200"
-  >
-    <Edit className="h-3 w-3 text-blue-500" />
-  </Button>
-
-  <Button
-    variant="outline"
-    size="sm"
-    onClick={() => handleSelectFarmer(farmer.id)}
-    className="h-5 w-5 p-0 hover:bg-red-50 hover:text-red-600 border-red-200"
-  >
-    <Trash2 className="h-3 w-3 text-red-500" />
-  </Button>
-</div>
-
-        </td>
-      </tr>
-    );
-  };
+  ), [searchValue, filters, uniqueRegions, uniqueLocations, handleSearch, handleFilterChange]);
 
   return (
     <div className="space-y-6">
@@ -933,7 +967,6 @@ const LivestockFarmersPage = () => {
           <h2 className="text-md font-bold mb-2 bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
             Livestock Farmers 
           </h2>
-          
         </div>
 
         <div className="flex flex-wrap gap-2">
@@ -967,7 +1000,7 @@ const LivestockFarmersPage = () => {
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <StatsCard 
-          title="Total Farmers" 
+          title="TOTAL FARMERS" 
           value={stats.totalFarmers} 
           icon={Users}
         >
@@ -982,14 +1015,14 @@ const LivestockFarmersPage = () => {
         </StatsCard>
 
         <StatsCard 
-          title="Animal census" 
+          title="ANIMAL CENSUS" 
           value={stats.totalGoats} 
           icon={Beef}
           description="Across all farmers"
         />
 
         <StatsCard 
-          title="Trained Farmers" 
+          title="TRAINED FARMERS" 
           value={stats.trainedFarmers} 
           icon={GraduationCap}
           description={`${stats.totalFarmers > 0 ? ((stats.trainedFarmers / stats.totalFarmers) * 100).toFixed(1) : '0'}% of total farmers`}
@@ -999,7 +1032,7 @@ const LivestockFarmersPage = () => {
       {/* Filters Section */}
       <Card className="shadow-lg border-0 bg-white">
         <CardContent className="space-y-4 pt-6">
-          <FilterSection />
+          {FilterSection}
         </CardContent>
       </Card>
 
@@ -1018,29 +1051,28 @@ const LivestockFarmersPage = () => {
           ) : (
             <>
               <div className="w-full overflow-x-auto rounded-md">
-                <table className=" w-full2borde4-collapse border border-gray-300 text-sm text-left whitespace-nowrap ">
+                <table className="w-full border-collapse border border-gray-300 text-sm text-left whitespace-nowrap">
                   <thead className="rounded">
                     <tr className="bg-blue-100 p-1 px-3">
                       <th className="py-2 px-4 ml-2">
                         <Checkbox
-
                           checked={selectedFarmers.length === currentPageFarmers.length && currentPageFarmers.length > 0}
                           onCheckedChange={handleSelectAll}
                         />
                       </th>
-                      <th className="text-left py-2  px-4 font-medium text-gray-600">Date</th>
-                      <th className="text-left py-2  px-4 font-medium text-gray-600">Farmer Name</th>
-                      <th className="text-left py-2  px-4 font-medium text-gray-600">Gender</th>
-                      <th className="text-left py-2  px-4 font-medium text-gray-600">Farmer ID</th>
-                      <th className="text-left py-2  px-4 font-medium text-gray-600">Phone</th>
-                      <th className="text-left py-2  px-4 font-medium text-gray-600">Location</th>
-                      <th className="text-left py-2  px-4 font-medium text-gray-600">Region</th>
-                      <th className="text-left py-2  px-4 font-medium text-gray-600">Number of goats</th>
-                      <th className="text-left py-2  px-4 font-medium text-gray-600">Vaccine</th>
-                      <th className="text-left py-2  px-4 font-medium text-gray-600">Vaccine Date</th>
-                      <th className="text-left py-2  px-4 font-medium text-gray-600">Training Status</th>
-                      <th className="text-left py-2  px-4 font-medium text-gray-600">Breeds</th>
-                      <th className="text-left py-2  px-4 font-medium text-gray-600">Actions</th>
+                      <th className="text-left py-2 px-4 font-medium text-gray-600">Date</th>
+                      <th className="text-left py-2 px-4 font-medium text-gray-600">Farmer Name</th>
+                      <th className="text-left py-2 px-4 font-medium text-gray-600">Gender</th>
+                      <th className="text-left py-2 px-4 font-medium text-gray-600">Farmer ID</th>
+                      <th className="text-left py-2 px-4 font-medium text-gray-600">Phone</th>
+                      <th className="text-left py-2 px-4 font-medium text-gray-600">Location</th>
+                      <th className="text-left py-2 px-4 font-medium text-gray-600">Region</th>
+                      <th className="text-left py-2 px-4 font-medium text-gray-600">Number of goats</th>
+                      <th className="text-left py-2 px-4 font-medium text-gray-600">Vaccine</th>
+                      <th className="text-left py-2 px-4 font-medium text-gray-600">Vaccine Date</th>
+                      <th className="text-left py-2 px-4 font-medium text-gray-600">Training Status</th>
+                      <th className="text-left py-2 px-4 font-medium text-gray-600">Breeds</th>
+                      <th className="text-left py-2 px-4 font-medium text-gray-600">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1051,30 +1083,35 @@ const LivestockFarmersPage = () => {
                 </table>
               </div>
 
-              {/* Pagination */}
+              {/* Pagination - FIXED: Proper pagination controls */}
               <div className="flex items-center justify-between p-4 border-t bg-gray-50">
                 <div className="text-sm text-muted-foreground">
-                  {filteredFarmers.length} total records • {currentPageFarmers.length} on this page
+                  Showing {((pagination.page - 1) * pagination.limit) + 1} to {Math.min(pagination.page * pagination.limit, filteredFarmers.length)} of {filteredFarmers.length} records
                 </div>
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={!pagination.hasPrev}
-                    onClick={() => handlePageChange(pagination.page - 1)}
-                    className="border-gray-300 hover:bg-gray-100"
-                  >
-                    Previous
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={!pagination.hasNext}
-                    onClick={() => handlePageChange(pagination.page + 1)}
-                    className="border-gray-300 hover:bg-gray-100"
-                  >
-                    Next
-                  </Button>
+                <div className="flex items-center gap-4">
+                  <div className="text-sm text-muted-foreground">
+                    Page {pagination.page} of {pagination.totalPages}
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={!pagination.hasPrev}
+                      onClick={() => handlePageChange(pagination.page - 1)}
+                      className="border-gray-300 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Previous
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={!pagination.hasNext}
+                      onClick={() => handlePageChange(pagination.page + 1)}
+                      className="border-gray-300 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Next
+                    </Button>
+                  </div>
                 </div>
               </div>
             </>

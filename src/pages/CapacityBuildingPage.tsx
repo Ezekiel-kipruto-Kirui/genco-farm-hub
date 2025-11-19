@@ -31,7 +31,7 @@ interface Filters {
   gender: string;
   startDate: string;
   endDate: string;
-  location: string;
+  
   modules: string;
   region: string;
 }
@@ -40,7 +40,7 @@ interface Stats {
   totalRecords: number;
   maleParticipants: number;
   femaleParticipants: number;
-  uniqueLocations: number;
+
   totalModules: number;
 }
 
@@ -108,6 +108,23 @@ const formatDate = (date: any): string => {
   return parsedDate ? parsedDate.toLocaleDateString() : 'N/A';
 };
 
+// Custom debounce hook
+const useDebounce = (value: string, delay: number) => {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value);
+    }, delay);
+
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [value, delay]);
+
+  return debouncedValue;
+};
+
 const CapacityBuildingPage = () => {
   const { userRole } = useAuth();
   const { toast } = useToast();
@@ -124,12 +141,15 @@ const CapacityBuildingPage = () => {
   
   const currentMonth = useMemo(getCurrentMonthDates, []);
 
-  const [filters, setFilters] = useState<Filters>({
-    search: "",
+  // Separate search state with debouncing
+  const [searchValue, setSearchValue] = useState("");
+  const debouncedSearch = useDebounce(searchValue, 300);
+
+  const [filters, setFilters] = useState<Omit<Filters, 'search'>>({
     gender: "all",
     startDate: currentMonth.startDate,
     endDate: currentMonth.endDate,
-    location: "all",
+    
     modules: "all",
     region: "all"
   });
@@ -138,7 +158,7 @@ const CapacityBuildingPage = () => {
     totalRecords: 0,
     maleParticipants: 0,
     femaleParticipants: 0,
-    uniqueLocations: 0,
+   
     totalModules: 0
   });
 
@@ -198,51 +218,36 @@ const CapacityBuildingPage = () => {
     }
   }, [toast]);
 
-  // Filter application
-  const applyFilters = useCallback(() => {
-    if (allRecords.length === 0) return;
-
-    let filtered = allRecords.filter(record => {
+  // Main filtering logic - completely separated from state updates
+  const filterAndProcessData = useCallback((records: TrainingRecord[], searchTerm: string, filterParams: Omit<Filters, 'search'>) => {
+    const filtered = records.filter(record => {
       // Gender filter
-      if (filters.gender !== "all" && record.Gender?.toLowerCase() !== filters.gender.toLowerCase()) {
+      if (filterParams.gender !== "all" && record.Gender?.toLowerCase() !== filterParams.gender.toLowerCase()) {
         return false;
       }
 
       // Region filter
-      if (filters.region !== "all" && record.region?.toLowerCase() !== filters.region.toLowerCase()) {
+      if (filterParams.region !== "all" && record.region?.toLowerCase() !== filterParams.region.toLowerCase()) {
         return false;
       }
 
       // Location filter (dependent on region)
-      if (filters.location !== "all") {
-        if (filters.region !== "all") {
-          // If region is selected, location must match both region and location
-          if (record.region?.toLowerCase() !== filters.region.toLowerCase() || 
-              record.Location?.toLowerCase() !== filters.location.toLowerCase()) {
-            return false;
-          }
-        } else {
-          // If no region selected, just match location
-          if (record.Location?.toLowerCase() !== filters.location.toLowerCase()) {
-            return false;
-          }
-        }
-      }
+    
 
       // Modules filter
-      if (filters.modules !== "all" && record.Modules?.toLowerCase() !== filters.modules.toLowerCase()) {
+      if (filterParams.modules !== "all" && record.Modules?.toLowerCase() !== filterParams.modules.toLowerCase()) {
         return false;
       }
 
       // Date filter
-      if (filters.startDate || filters.endDate) {
+      if (filterParams.startDate || filterParams.endDate) {
         const recordDate = parseDate(record.date) || parseDate(record.timestamp);
         if (recordDate) {
           const recordDateOnly = new Date(recordDate);
           recordDateOnly.setHours(0, 0, 0, 0);
 
-          const startDate = filters.startDate ? new Date(filters.startDate) : null;
-          const endDate = filters.endDate ? new Date(filters.endDate) : null;
+          const startDate = filterParams.startDate ? new Date(filterParams.startDate) : null;
+          const endDate = filterParams.endDate ? new Date(filterParams.endDate) : null;
           if (startDate) startDate.setHours(0, 0, 0, 0);
           if (endDate) endDate.setHours(23, 59, 59, 999);
 
@@ -251,60 +256,74 @@ const CapacityBuildingPage = () => {
         }
       }
 
-      // Search filter
-      if (filters.search) {
-        const searchTerm = filters.search.toLowerCase();
+      // Search filter - only apply if search term exists
+      if (searchTerm) {
+        const searchTermLower = searchTerm.toLowerCase();
         const searchMatch = [
           record.Name, record.Gender, record.Phone, record.Location, 
           record.region, record.Modules
-        ].some(field => field?.toLowerCase().includes(searchTerm));
+        ].some(field => field?.toLowerCase().includes(searchTermLower));
         if (!searchMatch) return false;
       }
 
       return true;
     });
 
-    setFilteredRecords(filtered);
-    
-    // Update stats
+    // Calculate stats
     const maleParticipants = filtered.filter(r => r.Gender?.toLowerCase() === 'male').length;
     const femaleParticipants = filtered.filter(r => r.Gender?.toLowerCase() === 'female').length;
     const uniqueLocations = new Set(filtered.map(r => r.Location).filter(Boolean)).size;
     const totalModules = new Set(filtered.map(r => r.Modules).filter(Boolean)).size;
 
-    setStats({
+    const calculatedStats = {
       totalRecords: filtered.length,
       maleParticipants,
       femaleParticipants,
       uniqueLocations,
       totalModules
-    });
+    };
 
-    // Update pagination
-    const totalPages = Math.ceil(filtered.length / pagination.limit);
+    // Calculate pagination
+    const totalPages = Math.ceil(filtered.length / PAGE_LIMIT);
+
+    return {
+      filteredRecords: filtered,
+      stats: calculatedStats,
+      totalPages
+    };
+  }, []);
+
+  // Effect to apply filters when data, search, or filters change
+  useEffect(() => {
+    if (allRecords.length === 0) return;
+
+    const result = filterAndProcessData(allRecords, debouncedSearch, filters);
+    
+    setFilteredRecords(result.filteredRecords);
+    setStats(result.stats);
+    
+    // Update pagination - FIXED: Ensure hasPrev is calculated correctly
     setPagination(prev => ({
       ...prev,
-      totalPages,
-      hasNext: prev.page < totalPages,
+      totalPages: result.totalPages,
+      hasNext: prev.page < result.totalPages,
       hasPrev: prev.page > 1
     }));
-  }, [allRecords, filters, pagination.limit]);
+  }, [allRecords, debouncedSearch, filters, filterAndProcessData]);
 
   // Effects
   useEffect(() => {
     fetchAllData();
   }, [fetchAllData]);
 
-  useEffect(() => {
-    applyFilters();
-  }, [applyFilters]);
+  // Search handler - only updates the search state
+  const handleSearch = useCallback((value: string) => {
+    setSearchValue(value);
+    setPagination(prev => ({ ...prev, page: 1 }));
+  }, []);
 
-  // Handlers
-  const handleSearch = (value: string) => {
-    setFilters(prev => ({ ...prev, search: value }));
-  };
-
-  const handleFilterChange = (key: keyof Filters, value: string) => {
+  // Filter change handler
+  const handleFilterChange = useCallback((key: keyof Omit<Filters, 'search'>, value: string) => {
     setFilters(prev => ({ 
       ...prev, 
       [key]: value,
@@ -312,9 +331,9 @@ const CapacityBuildingPage = () => {
       ...(key === 'region' && value !== 'all' ? { location: 'all' } : {})
     }));
     setPagination(prev => ({ ...prev, page: 1 }));
-  };
+  }, []);
 
-  const handleExport = async () => {
+  const handleExport = useCallback(async () => {
     try {
       setExportLoading(true);
       
@@ -374,11 +393,20 @@ const CapacityBuildingPage = () => {
     } finally {
       setExportLoading(false);
     }
-  };
+  }, [filteredRecords, filters.startDate, filters.endDate, toast]);
 
-  const handlePageChange = (newPage: number) => {
-    setPagination(prev => ({ ...prev, page: newPage }));
-  };
+  // FIXED: Improved page change handler
+  const handlePageChange = useCallback((newPage: number) => {
+    setPagination(prev => {
+      const totalPages = Math.ceil(filteredRecords.length / prev.limit);
+      return {
+        ...prev,
+        page: newPage,
+        hasNext: newPage < totalPages,
+        hasPrev: newPage > 1
+      };
+    });
+  }, [filteredRecords.length]);
 
   const getCurrentPageRecords = useCallback(() => {
     const startIndex = (pagination.page - 1) * pagination.limit;
@@ -386,22 +414,22 @@ const CapacityBuildingPage = () => {
     return filteredRecords.slice(startIndex, endIndex);
   }, [filteredRecords, pagination.page, pagination.limit]);
 
-  const handleSelectRecord = (recordId: string) => {
+  const handleSelectRecord = useCallback((recordId: string) => {
     setSelectedRecords(prev =>
       prev.includes(recordId)
         ? prev.filter(id => id !== recordId)
         : [...prev, recordId]
     );
-  };
+  }, []);
 
-  const handleSelectAll = () => {
+  const handleSelectAll = useCallback(() => {
     const currentPageIds = getCurrentPageRecords().map(r => r.id);
     setSelectedRecords(prev =>
       prev.length === currentPageIds.length ? [] : currentPageIds
     );
-  };
+  }, [getCurrentPageRecords]);
 
-  const openEditDialog = (record: TrainingRecord) => {
+  const openEditDialog = useCallback((record: TrainingRecord) => {
     setEditingRecord(record);
     setEditForm({
       Name: record.Name || "",
@@ -413,14 +441,14 @@ const CapacityBuildingPage = () => {
       date: record.date ? (parseDate(record.date)?.toISOString().split('T')[0] || "") : ""
     });
     setIsEditDialogOpen(true);
-  };
+  }, []);
 
-  const openViewDialog = (record: TrainingRecord) => {
+  const openViewDialog = useCallback((record: TrainingRecord) => {
     setViewingRecord(record);
     setIsViewDialogOpen(true);
-  };
+  }, []);
 
-  const handleEditSubmit = async () => {
+  const handleEditSubmit = useCallback(async () => {
     if (!editingRecord) return;
 
     try {
@@ -453,9 +481,9 @@ const CapacityBuildingPage = () => {
         variant: "destructive",
       });
     }
-  };
+  }, [editingRecord, editForm, fetchAllData, toast]);
 
-  const handleDeleteSelected = async () => {
+  const handleDeleteSelected = useCallback(async () => {
     if (selectedRecords.length === 0) return;
 
     try {
@@ -486,7 +514,7 @@ const CapacityBuildingPage = () => {
     } finally {
       setDeleteLoading(false);
     }
-  };
+  }, [selectedRecords, fetchAllData, toast]);
 
   // Memoized values
   const uniqueRegions = useMemo(() => 
@@ -519,30 +547,42 @@ const CapacityBuildingPage = () => {
 
   const currentPageRecords = useMemo(getCurrentPageRecords, [getCurrentPageRecords]);
 
-  const clearAllFilters = () => {
+  const clearAllFilters = useCallback(() => {
+    setSearchValue("");
     setFilters({
-      search: "",
       gender: "all",
       startDate: "",
       endDate: "",
-      location: "all",
+    
       modules: "all",
       region: "all"
     });
-  };
+    setPagination(prev => ({ ...prev, page: 1 }));
+  }, []);
 
-  const resetToCurrentMonth = () => {
+  const resetToCurrentMonth = useCallback(() => {
     setFilters(prev => ({ ...prev, ...currentMonth }));
-  };
+    setPagination(prev => ({ ...prev, page: 1 }));
+  }, [currentMonth]);
+
+  // FIXED: Ensure pagination buttons are always correctly enabled/disabled
+  const paginationState = useMemo(() => {
+    const totalPages = Math.ceil(filteredRecords.length / PAGE_LIMIT);
+    return {
+      hasNext: pagination.page < totalPages,
+      hasPrev: pagination.page > 1,
+      totalPages
+    };
+  }, [filteredRecords.length, pagination.page]);
 
   // Render components
-  const StatsCard = ({ title, value, icon: Icon, description, children }: any) => (
+  const StatsCard = useCallback(({ title, value, icon: Icon, description, children }: any) => (
     <Card className="bg-white text-slate-900 shadow-lg border border-gray-200 relative overflow-hidden">
       {/* Left accent border */}
       <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-blue-500 to-purple-600"></div>
       
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 pt-4 pl-6">
-        <CardTitle className="text-sm font-medium text-slate-700">{title}</CardTitle>
+        <CardTitle className="text-sm font-medium text-gray-500">{title}</CardTitle>
       </CardHeader>
       <CardContent className="pl-6 pb-4 flex flex-row">
         <div className="mr-2 rounded-full">
@@ -559,16 +599,16 @@ const CapacityBuildingPage = () => {
         </div>
       </CardContent>
     </Card>
-  );
+  ), []);
 
-  const FilterSection = () => (
+  const FilterSection = useMemo(() => (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
       <div className="space-y-2">
         <Label htmlFor="search" className="font-semibold text-gray-700">Search</Label>
         <Input
           id="search"
           placeholder="Search records..."
-          value={filters.search}
+          value={searchValue}
           onChange={(e) => handleSearch(e.target.value)}
           className="border-gray-300 focus:border-blue-500 focus:ring-blue-500 bg-white"
         />
@@ -604,28 +644,7 @@ const CapacityBuildingPage = () => {
         </Select>
       </div>
 
-      <div className="space-y-2">
-        <Label htmlFor="location" className="font-semibold text-gray-700">Location</Label>
-        <Select 
-          value={filters.location} 
-          onValueChange={(value) => handleFilterChange("location", value)}
-          disabled={filters.region !== "all" && uniqueLocations.length === 0}
-        >
-          <SelectTrigger className="border-gray-300 focus:border-blue-500 focus:ring-blue-500 bg-white">
-            <SelectValue placeholder={
-              filters.region !== "all" && uniqueLocations.length === 0 
-                ? "No locations for this region" 
-                : "Select location"
-            } />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Locations</SelectItem>
-            {uniqueLocations.slice(0, 20).map(location => (
-              <SelectItem key={location} value={location}>{location}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+    
 
       <div className="space-y-2">
         <Label htmlFor="modules" className="font-semibold text-gray-700">Modules</Label>
@@ -664,9 +683,9 @@ const CapacityBuildingPage = () => {
         />
       </div>
     </div>
-  );
+  ), [searchValue, filters, uniqueGenders, uniqueRegions, uniqueLocations, uniqueModules, handleSearch, handleFilterChange]);
 
-  const TableRow = ({ record }: { record: TrainingRecord }) => (
+  const TableRow = useCallback(({ record }: { record: TrainingRecord }) => (
     <tr className="border-b hover:bg-blue-50 transition-all duration-200 group text-sm">
       <td className="py-2 px-4 ml-2">
         <Checkbox
@@ -674,20 +693,20 @@ const CapacityBuildingPage = () => {
           onCheckedChange={() => handleSelectRecord(record.id)}
         />
       </td>
-      <td className="py-2 px-4">{formatDate(record.date || record.timestamp)}</td>
+      <td className="py-2 px-4 text-sm">{formatDate(record.date || record.timestamp)}</td>
       <td className="py-2 px-4 text-sm">{record.Name || 'N/A'}</td>
-      <td className="py-2 px-4">{record.Gender || 'N/A'}</td>
+      <td className="py-2 px- text-sm">{record.Gender || 'N/A'}</td>
       <td className="py-2 px-4 text-sm text-gray-600">{record.Phone || 'N/A'}</td>
-      <td className="py-2 px-4">{record.Location || 'N/A'}</td>
-      <td className="py-2 px-4">{record.region || 'N/A'}</td>
-      <td className="py-2 px-4">{record.Modules || 'N/A'}</td>
-      <td className="py-2 px-4">
+      <td className="py-2 px-4 text-sm">{record.Location || 'N/A'}</td>
+      <td className="py-2 px-4 text-sm">{record.region || 'N/A'}</td>
+      <td className="py-2 px-4 text-sm">{record.Modules || 'N/A'}</td>
+      <td className="py-2 px-4 text-sm">
         <div className="flex gap-2">
           <Button
             variant="outline"
             size="sm"
             onClick={() => openViewDialog(record)}
-            className="h-5 w-5 p-0 hover:bg-green-50 hover:text-green-600 border-green-200"
+            className="h-6 w-6 p-0 hover:bg-green-50 hover:text-green-600 border-green-200"
           >
             <Eye className="h-3 w-3 text-green-500" />
           </Button>
@@ -697,9 +716,9 @@ const CapacityBuildingPage = () => {
                 variant="outline"
                 size="sm"
                 onClick={() => openEditDialog(record)}
-                className="h-5 w-5 p-0 hover:bg-blue-50 hover:text-blue-600 border-blue-200"
+                className="h-6 w-6 p-0 hover:bg-orange-50 hover:text-blue-600 border-gray-200"
               >
-                <Edit className="h-3 w-3 text-blue-500" />
+                <Edit className="h-3 w-3 text-orange-400" />
               </Button>
               <Button
                 variant="outline"
@@ -714,7 +733,7 @@ const CapacityBuildingPage = () => {
         </div>
       </td>
     </tr>
-  );
+  ), [selectedRecords, handleSelectRecord, openViewDialog, openEditDialog, userRole]);
 
   return (
     <div className="space-y-6">
@@ -757,30 +776,29 @@ const CapacityBuildingPage = () => {
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <StatsCard 
-          title="Total Participants" 
+          title="TOTAL PARTICIPANTS" 
           value={stats.totalRecords} 
           icon={Users}
         >
           <div className="flex gap-4 justify-between text-xs text-slate-600 mt-2">
-            <span>Male: {stats.maleParticipants}</span>
-            <span>Female: {stats.femaleParticipants}</span>
-          </div>
-          <div className="flex justify-between text-xs text-slate-600 mt-1">
-            <span>{(stats.maleParticipants > 0 ? (stats.maleParticipants / stats.totalRecords * 100).toFixed(1) : '0')}%</span>
-            <span>{(stats.femaleParticipants > 0 ? (stats.femaleParticipants / stats.totalRecords * 100).toFixed(1) : '0')}%</span>
+           
+         
+       
+            <span>Male {(stats.maleParticipants > 0 ? (stats.maleParticipants / stats.totalRecords * 100).toFixed(1) : '0')}%</span>
+            <span>Female {(stats.femaleParticipants > 0 ? (stats.femaleParticipants / stats.totalRecords * 100).toFixed(1) : '0')}%</span>
           </div>
         </StatsCard>
 
         <StatsCard 
-          title="Training Locations" 
-          value={stats.uniqueLocations} 
+          title="MALE FARMERS" 
+          value={stats.maleParticipants} 
           icon={MapPin}
           description="Different training locations"
         />
 
         <StatsCard 
-          title="Training Modules" 
-          value={stats.totalModules} 
+          title="FEMALE FARMERS" 
+          value={stats.femaleParticipants} 
           icon={BookOpen}
           description="Different modules offered"
         />
@@ -789,7 +807,7 @@ const CapacityBuildingPage = () => {
       {/* Filters Section */}
       <Card className="shadow-lg border-0 bg-white">
         <CardContent className="space-y-4 pt-6">
-          <FilterSection />
+          {FilterSection}
         </CardContent>
       </Card>
 
@@ -835,16 +853,16 @@ const CapacityBuildingPage = () => {
                 </table>
               </div>
 
-              {/* Pagination */}
+              {/* Pagination - FIXED: Using the correct pagination state */}
               <div className="flex items-center justify-between p-4 border-t bg-gray-50">
                 <div className="text-sm text-muted-foreground">
-                  {filteredRecords.length} total records • {currentPageRecords.length} on this page
+                  {filteredRecords.length} total records • Page {pagination.page} of {paginationState.totalPages} • {currentPageRecords.length} on this page
                 </div>
                 <div className="flex gap-2">
                   <Button
                     variant="outline"
                     size="sm"
-                    disabled={!pagination.hasPrev}
+                    disabled={!paginationState.hasPrev}
                     onClick={() => handlePageChange(pagination.page - 1)}
                     className="border-gray-300 hover:bg-gray-100"
                   >
@@ -853,7 +871,7 @@ const CapacityBuildingPage = () => {
                   <Button
                     variant="outline"
                     size="sm"
-                    disabled={!pagination.hasNext}
+                    disabled={!paginationState.hasNext}
                     onClick={() => handlePageChange(pagination.page + 1)}
                     className="border-gray-300 hover:bg-gray-100"
                   >
@@ -1047,6 +1065,7 @@ const CapacityBuildingPage = () => {
           </DialogContent>
         </Dialog>
       )}
+
     </div>
   );
 };

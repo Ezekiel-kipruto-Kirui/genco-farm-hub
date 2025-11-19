@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { fetchData } from "@/lib/firebase";
+import { collection, getDocs, query, updateDoc, doc, deleteDoc, writeBatch } from "firebase/firestore";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
-import { Download, Warehouse, MapPin, Eye, Calendar, Building, Globe, Users } from "lucide-react";
+import { Download, Warehouse, MapPin, Eye, Calendar, Building, Globe, Users, DollarSign, Package, Archive, Edit, Save, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 // Types
@@ -18,12 +19,11 @@ interface Infrastructure {
   date: any;
   location?: string;
   region?: string;
-  type?: string;
-  capacity?: number;
-  currentStock?: number;
-  status?: string;
-  manager?: string;
-  contact?: string;
+  bales_given_sold?: number;
+  bales_size?: string;
+  bales_storeddate?: any;
+  hay_storage_facility?: string;
+  revenue_from_sales?: number;
 }
 
 interface Filters {
@@ -32,15 +32,13 @@ interface Filters {
   endDate: string;
   location: string;
   region: string;
-  type: string;
-  status: string;
 }
 
 interface Stats {
   totalFacilities: number;
   totalRegions: number;
-  totalTypes: number;
-  totalCapacity: number;
+  totalRevenue: number;
+  totalBales: number;
 }
 
 interface Pagination {
@@ -53,6 +51,7 @@ interface Pagination {
 
 // Constants
 const PAGE_LIMIT = 15;
+const SEARCH_DEBOUNCE_DELAY = 300; // milliseconds
 
 // Helper functions
 const parseDate = (date: any): Date | null => {
@@ -89,6 +88,18 @@ const formatDate = (date: any): string => {
   }) : 'N/A';
 };
 
+const formatDateForInput = (date: any): string => {
+  const parsedDate = parseDate(date);
+  return parsedDate ? parsedDate.toISOString().split('T')[0] : '';
+};
+
+const formatCurrency = (amount: number): string => {
+  return new Intl.NumberFormat('en-KE', {
+    style: 'currency',
+    currency: 'KES',
+  }).format(amount || 0);
+};
+
 const getCurrentMonthDates = () => {
   const now = new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -109,8 +120,12 @@ const HayStoragePage = () => {
   const [exportLoading, setExportLoading] = useState(false);
   const [selectedRecords, setSelectedRecords] = useState<string[]>([]);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [viewingRecord, setViewingRecord] = useState<Infrastructure | null>(null);
+  const [editingRecord, setEditingRecord] = useState<Infrastructure | null>(null);
+  const [saving, setSaving] = useState(false);
   
+  const searchTimeoutRef = useRef<NodeJS.Timeout>();
   const currentMonth = useMemo(getCurrentMonthDates, []);
 
   const [filters, setFilters] = useState<Filters>({
@@ -119,15 +134,13 @@ const HayStoragePage = () => {
     endDate: currentMonth.endDate,
     location: "all",
     region: "all",
-    type: "all",
-    status: "all"
   });
 
   const [stats, setStats] = useState<Stats>({
     totalFacilities: 0,
     totalRegions: 0,
-    totalTypes: 0,
-    totalCapacity: 0
+    totalRevenue: 0,
+    totalBales: 0,
   });
 
   const [pagination, setPagination] = useState<Pagination>({
@@ -157,19 +170,28 @@ const HayStoragePage = () => {
       const infrastructureData = Array.isArray(data.infrastructure) ? data.infrastructure.map((item: any, index: number) => {
         console.log(`Processing infrastructure item ${index}:`, item);
         
-        // Handle date parsing
+        // Handle date parsing for main date
         let dateValue = item.date || item.Date || item.createdAt || item.timestamp;
         
-        // If it's a Firestore timestamp object
-        if (dateValue && typeof dateValue === 'object') {
-          if (dateValue.toDate && typeof dateValue.toDate === 'function') {
-            dateValue = dateValue.toDate();
-          } else if (dateValue.seconds) {
-            dateValue = new Date(dateValue.seconds * 1000);
-          } else if (dateValue._seconds) {
-            dateValue = new Date(dateValue._seconds * 1000);
+        // Handle bales_storeddate parsing
+        let balesStoredDateValue = item.bales_storeddate || item.balesStoredDate || item.stored_date;
+        
+        // Parse dates if they are Firestore timestamp objects
+        const parseFirestoreDate = (dateValue: any) => {
+          if (dateValue && typeof dateValue === 'object') {
+            if (dateValue.toDate && typeof dateValue.toDate === 'function') {
+              return dateValue.toDate();
+            } else if (dateValue.seconds) {
+              return new Date(dateValue.seconds * 1000);
+            } else if (dateValue._seconds) {
+              return new Date(dateValue._seconds * 1000);
+            }
           }
-        }
+          return dateValue;
+        };
+
+        dateValue = parseFirestoreDate(dateValue);
+        balesStoredDateValue = parseFirestoreDate(balesStoredDateValue);
 
         // Handle different field name variations for infrastructure
         const processedItem = {
@@ -177,12 +199,11 @@ const HayStoragePage = () => {
           date: dateValue,
           location: item.location || item.Location || item.area || item.Area || '',
           region: item.region || item.Region || item.county || item.County || '',
-          type: item.type || item.Type || item.facilityType || item.FacilityType || '',
-          capacity: Number(item.capacity || item.Capacity || item.storageCapacity || item.StorageCapacity || 0),
-          currentStock: Number(item.currentStock || item.CurrentStock || item.stock || item.Stock || 0),
-          status: item.status || item.Status || item.condition || item.Condition || '',
-          manager: item.manager || item.Manager || item.contactPerson || item.ContactPerson || '',
-          contact: item.contact || item.Contact || item.phone || item.Phone || item.telephone || item.Telephone || ''
+          bales_given_sold: Number(item.bales_given_sold || item.balesGivenSold || item.bales_sold || item.balesSold || 0),
+          bales_size: item.bales_size || item.balesSize || item.bale_size || item.baleSize || '',
+          bales_storeddate: balesStoredDateValue,
+          hay_storage_facility: item.hay_storage_facility || item.hayStorageFacility || item.storage_facility || item.storageFacility || '',
+          revenue_from_sales: Number(item.revenue_from_sales || item.revenueFromSales || item.revenue || item.sales_revenue || 0)
         };
 
         console.log(`Processed infrastructure item ${index}:`, processedItem);
@@ -213,8 +234,8 @@ const HayStoragePage = () => {
       setStats({
         totalFacilities: 0,
         totalRegions: 0,
-        totalTypes: 0,
-        totalCapacity: 0
+        totalRevenue: 0,
+        totalBales: 0,
       });
       return;
     }
@@ -229,16 +250,6 @@ const HayStoragePage = () => {
 
       // Location filter
       if (filters.location !== "all" && record.location?.toLowerCase() !== filters.location.toLowerCase()) {
-        return false;
-      }
-
-      // Type filter
-      if (filters.type !== "all" && record.type?.toLowerCase() !== filters.type.toLowerCase()) {
-        return false;
-      }
-
-      // Status filter
-      if (filters.status !== "all" && record.status?.toLowerCase() !== filters.status.toLowerCase()) {
         return false;
       }
 
@@ -268,9 +279,8 @@ const HayStoragePage = () => {
         const searchMatch = [
           record.location, 
           record.region, 
-          record.type,
-          record.status,
-          record.manager
+          record.hay_storage_facility,
+          record.bales_size
         ].some(field => field?.toLowerCase().includes(searchTerm));
         if (!searchMatch) return false;
       }
@@ -282,19 +292,19 @@ const HayStoragePage = () => {
     setFilteredInfrastructure(filtered);
     
     // Update stats
-    const totalCapacity = filtered.reduce((sum, record) => sum + (record.capacity || 0), 0);
+    const totalRevenue = filtered.reduce((sum, record) => sum + (record.revenue_from_sales || 0), 0);
+    const totalBales = filtered.reduce((sum, record) => sum + (record.bales_given_sold || 0), 0);
     
-    // Count unique regions and types from filtered data
+    // Count unique regions from filtered data
     const uniqueRegions = new Set(filtered.map(f => f.region).filter(Boolean));
-    const uniqueTypes = new Set(filtered.map(f => f.type).filter(Boolean));
 
-    console.log("Stats - Total Facilities:", filtered.length, "Regions:", uniqueRegions.size, "Types:", uniqueTypes.size, "Capacity:", totalCapacity);
+    console.log("Stats - Total Facilities:", filtered.length, "Regions:", uniqueRegions.size, "Revenue:", totalRevenue, "Bales:", totalBales);
 
     setStats({
       totalFacilities: filtered.length,
       totalRegions: uniqueRegions.size,
-      totalTypes: uniqueTypes.size,
-      totalCapacity
+      totalRevenue,
+      totalBales
     });
 
     // Update pagination
@@ -316,15 +326,34 @@ const HayStoragePage = () => {
     applyFilters();
   }, [applyFilters]);
 
-  // Handlers
-  const handleSearch = (value: string) => {
-    setFilters(prev => ({ ...prev, search: value }));
-  };
+  // Optimized search handler with debouncing
+  const handleSearch = useCallback((value: string) => {
+    // Clear previous timeout
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
 
-  const handleFilterChange = (key: keyof Filters, value: string) => {
+    // Set new timeout
+    searchTimeoutRef.current = setTimeout(() => {
+      setFilters(prev => ({ ...prev, search: value }));
+      setPagination(prev => ({ ...prev, page: 1 }));
+    }, SEARCH_DEBOUNCE_DELAY);
+  }, []);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Filter change handler
+  const handleFilterChange = useCallback((key: keyof Filters, value: string) => {
     setFilters(prev => ({ ...prev, [key]: value }));
     setPagination(prev => ({ ...prev, page: 1 }));
-  };
+  }, []);
 
   const handleExport = async () => {
     try {
@@ -343,15 +372,14 @@ const HayStoragePage = () => {
         formatDate(record.date),
         record.location || 'N/A',
         record.region || 'N/A',
-        record.type || 'N/A',
-        (record.capacity || 0).toString(),
-        (record.currentStock || 0).toString(),
-        record.status || 'N/A',
-        record.manager || 'N/A',
-        record.contact || 'N/A'
+        record.hay_storage_facility || 'N/A',
+        record.bales_given_sold || 0,
+        record.bales_size || 'N/A',
+        formatDate(record.bales_storeddate),
+        formatCurrency(record.revenue_from_sales || 0)
       ]);
 
-      const headers = ['Date', 'Location', 'Region', 'Type', 'Capacity', 'Current Stock', 'Status', 'Manager', 'Contact'];
+      const headers = ['Date', 'Location', 'Region', 'Storage Facility', 'Bales Given/Sold', 'Bales Size', 'Bales Stored Date', 'Revenue'];
       const csvContent = [headers, ...csvData]
         .map(row => row.map(field => `"${field}"`).join(','))
         .join('\n');
@@ -361,7 +389,7 @@ const HayStoragePage = () => {
       const link = document.createElement('a');
       link.href = url;
       
-      let filename = `infrastructure-data`;
+      let filename = `hay-storage-data`;
       if (filters.startDate || filters.endDate) {
         filename += `_${filters.startDate || 'start'}_to_${filters.endDate || 'end'}`;
       }
@@ -375,7 +403,7 @@ const HayStoragePage = () => {
 
       toast({
         title: "Export Successful",
-        description: `Exported ${filteredInfrastructure.length} infrastructure records`,
+        description: `Exported ${filteredInfrastructure.length} hay storage records`,
       });
 
     } catch (error) {
@@ -420,6 +448,57 @@ const HayStoragePage = () => {
     setIsViewDialogOpen(true);
   };
 
+  const openEditDialog = (record: Infrastructure) => {
+    setEditingRecord({...record});
+    setIsEditDialogOpen(true);
+  };
+
+  const closeEditDialog = () => {
+    setEditingRecord(null);
+    setIsEditDialogOpen(false);
+  };
+
+  const handleEditChange = (field: keyof Infrastructure, value: any) => {
+    if (editingRecord) {
+      setEditingRecord(prev => prev ? {...prev, [field]: value} : null);
+    }
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingRecord) return;
+
+    try {
+      setSaving(true);
+      
+      // Update the record in the database
+      await updateData('infrastructure', editingRecord.id, editingRecord);
+      
+      // Update local state
+      setAllInfrastructure(prev => 
+        prev.map(record => 
+          record.id === editingRecord.id ? editingRecord : record
+        )
+      );
+
+      toast({
+        title: "Success",
+        description: "Record updated successfully",
+      });
+
+      closeEditDialog();
+      
+    } catch (error) {
+      console.error("Error updating record:", error);
+      toast({
+        title: "Error",
+        description: "Failed to update record. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   // Memoized values
   const uniqueRegions = useMemo(() => {
     const regions = [...new Set(allInfrastructure.map(f => f.region).filter(Boolean))];
@@ -433,29 +512,20 @@ const HayStoragePage = () => {
     return locations;
   }, [allInfrastructure]);
 
-  const uniqueTypes = useMemo(() => {
-    const types = [...new Set(allInfrastructure.map(f => f.type).filter(Boolean))];
-    console.log("Unique types:", types);
-    return types;
-  }, [allInfrastructure]);
-
-  const uniqueStatuses = useMemo(() => {
-    const statuses = [...new Set(allInfrastructure.map(f => f.status).filter(Boolean))];
-    console.log("Unique statuses:", statuses);
-    return statuses;
-  }, [allInfrastructure]);
-
   const currentPageRecords = useMemo(getCurrentPageRecords, [getCurrentPageRecords]);
 
   const clearAllFilters = () => {
+    // Clear any pending search timeout
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+    
     setFilters({
       search: "",
       startDate: "",
       endDate: "",
       location: "all",
       region: "all",
-      type: "all",
-      status: "all"
     });
   };
 
@@ -463,8 +533,8 @@ const HayStoragePage = () => {
     setFilters(prev => ({ ...prev, ...currentMonth }));
   };
 
-  // Render components
-  const StatsCard = ({ title, value, icon: Icon, description }: any) => (
+  // Memoized components to prevent re-renders
+  const StatsCard = useCallback(({ title, value, icon: Icon, description }: any) => (
     <Card className="bg-white text-slate-900 shadow-lg border border-gray-200 relative overflow-hidden">
       <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-blue-500 to-purple-600"></div>
       
@@ -485,16 +555,15 @@ const HayStoragePage = () => {
         </div>
       </CardContent>
     </Card>
-  );
+  ), []);
 
-  const FilterSection = () => (
+  const FilterSection = useMemo(() => (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
       <div className="space-y-2">
         <Label htmlFor="search" className="font-semibold text-gray-700">Search</Label>
         <Input
           id="search"
-          placeholder="Search infrastructure..."
-          value={filters.search}
+          placeholder="Search hay storage..."
           onChange={(e) => handleSearch(e.target.value)}
           className="border-gray-300 focus:border-blue-500 focus:ring-blue-500 bg-white"
         />
@@ -510,36 +579,6 @@ const HayStoragePage = () => {
             <SelectItem value="all">All Regions</SelectItem>
             {uniqueRegions.slice(0, 20).map(region => (
               <SelectItem key={region} value={region}>{region}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="type" className="font-semibold text-gray-700">Facility Type</Label>
-        <Select value={filters.type} onValueChange={(value) => handleFilterChange("type", value)}>
-          <SelectTrigger className="border-gray-300 focus:border-blue-500 focus:ring-blue-500 bg-white">
-            <SelectValue placeholder="Select type" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Types</SelectItem>
-            {uniqueTypes.slice(0, 20).map(type => (
-              <SelectItem key={type} value={type}>{type}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="status" className="font-semibold text-gray-700">Status</Label>
-        <Select value={filters.status} onValueChange={(value) => handleFilterChange("status", value)}>
-          <SelectTrigger className="border-gray-300 focus:border-blue-500 focus:ring-blue-500 bg-white">
-            <SelectValue placeholder="Select status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Status</SelectItem>
-            {uniqueStatuses.slice(0, 20).map(status => (
-              <SelectItem key={status} value={status}>{status}</SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -567,11 +606,9 @@ const HayStoragePage = () => {
         />
       </div>
     </div>
-  );
+  ), [filters, uniqueRegions, handleSearch, handleFilterChange]);
 
-  const TableRow = ({ record }: { record: Infrastructure }) => {
-    const utilizationRate = record.capacity ? ((record.currentStock || 0) / record.capacity * 100).toFixed(1) : '0';
-    
+  const TableRow = useCallback(({ record }: { record: Infrastructure }) => {
     return (
       <tr className="border-b hover:bg-blue-50 transition-colors duration-200 group text-sm">
         <td className="py-3 px-4">
@@ -581,27 +618,12 @@ const HayStoragePage = () => {
           />
         </td>
         <td className="py-3 px-4">{formatDate(record.date)}</td>
-        <td className="py-3 px-4">{record.location || 'N/A'}</td>
+       
         <td className="py-3 px-4">{record.region || 'N/A'}</td>
-        <td className="py-3 px-4">
-          <Badge className="bg-purple-100 text-purple-800">
-            {record.type || 'N/A'}
-          </Badge>
-        </td>
-        <td className="py-3 px-4">{record.capacity || 0}</td>
-        <td className="py-3 px-4">{record.currentStock || 0}</td>
-        <td className="py-3 px-4">
-          <Badge className={
-            record.status?.toLowerCase() === 'operational' ? 'bg-green-100 text-green-800' :
-            record.status?.toLowerCase() === 'under maintenance' ? 'bg-yellow-100 text-yellow-800' :
-            'bg-red-100 text-red-800'
-          }>
-            {record.status || 'N/A'}
-          </Badge>
-        </td>
-        <td className="py-3 px-4">
-          <span className="font-bold text-gray-700">{utilizationRate}%</span>
-        </td>
+        <td className="py-3 px-4">{record.hay_storage_facility || 'N/A'}</td>
+        <td className="py-3 px-4">{record.bales_given_sold || 0}</td>
+        <td className="py-3 px-4">{record.bales_size || 'N/A'}</td>
+        <td className="py-3 px-4">{formatCurrency(record.revenue_from_sales || 0)}</td>
         <td className="py-3 px-4">
           <div className="flex gap-2">
             <Button
@@ -612,24 +634,28 @@ const HayStoragePage = () => {
             >
               <Eye className="h-4 w-4 text-blue-500" />
             </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => openEditDialog(record)}
+              className="h-8 w-8 p-0 hover:bg-green-50 hover:text-green-600 border-green-200"
+            >
+              <Edit className="h-4 w-4 text-green-500" />
+            </Button>
           </div>
         </td>
       </tr>
     );
-  };
+  }, [selectedRecords, handleSelectRecord, openViewDialog, openEditDialog]);
 
   return (
     <div className="space-y-6">
       {/* Header with Action Buttons */}
       <div className="flex md:flex-row flex-col justify-between items-start sm:items-center gap-4">
         <div>
-          <h2 className="text-2xl font-bold mb-2 bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-            Infrastructure Data
+          <h2 className="text-xl font-bold mb-2 bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+            Hay Storage
           </h2>
-          <p className="text-muted-foreground">Manage infrastructure and hay storage records</p>
-          <p className="text-sm text-gray-500">
-            Loaded {allInfrastructure.length} facilities • Showing {filteredInfrastructure.length} after filters
-          </p>
         </div>
 
         <div className="flex flex-wrap gap-2">
@@ -661,12 +687,12 @@ const HayStoragePage = () => {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatsCard 
           title="Total Facilities" 
           value={stats.totalFacilities} 
           icon={Warehouse}
-          description="Infrastructure facilities"
+          description="Hay storage facilities"
         />
 
         <StatsCard 
@@ -677,24 +703,24 @@ const HayStoragePage = () => {
         />
 
         <StatsCard 
-          title="Facility Types" 
-          value={stats.totalTypes} 
-          icon={Building}
-          description="Different facility types"
+          title="Total Bales" 
+          value={stats.totalBales} 
+          icon={Package}
+          description="Bales given/sold"
         />
 
         <StatsCard 
-          title="Total Capacity" 
-          value={stats.totalCapacity.toLocaleString()} 
-          icon={Users}
-          description="Total storage capacity"
+          title="Total Revenue" 
+          value={formatCurrency(stats.totalRevenue)} 
+          icon={DollarSign}
+          description="Revenue from sales"
         />
       </div>
 
       {/* Filters Section */}
       <Card className="shadow-lg border-0 bg-white">
         <CardContent className="space-y-4 pt-6">
-          <FilterSection />
+          {FilterSection}
         </CardContent>
       </Card>
 
@@ -704,11 +730,11 @@ const HayStoragePage = () => {
           {loading ? (
             <div className="text-center py-12">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
-              <p className="text-muted-foreground mt-2">Loading infrastructure data...</p>
+              <p className="text-muted-foreground mt-2">Loading hay storage data...</p>
             </div>
           ) : currentPageRecords.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
-              {allInfrastructure.length === 0 ? "No infrastructure data found in database" : "No records found matching your criteria"}
+              {allInfrastructure.length === 0 ? "No hay storage data found in database" : "No records found matching your criteria"}
             </div>
           ) : (
             <>
@@ -723,13 +749,12 @@ const HayStoragePage = () => {
                         />
                       </th>
                       <th className="py-3 px-4 font-medium text-gray-600">Date</th>
-                      <th className="py-3 px-4 font-medium text-gray-600">Location</th>
+                    
                       <th className="py-3 px-4 font-medium text-gray-600">Region</th>
-                      <th className="py-3 px-4 font-medium text-gray-600">Type</th>
-                      <th className="py-3 px-4 font-medium text-gray-600">Capacity</th>
-                      <th className="py-3 px-4 font-medium text-gray-600">Current Stock</th>
-                      <th className="py-3 px-4 font-medium text-gray-600">Status</th>
-                      <th className="py-3 px-4 font-medium text-gray-600">Utilization</th>
+                      <th className="py-3 px-4 font-medium text-gray-600">Storage Facility</th>
+                      <th className="py-3 px-4 font-medium text-gray-600">Bales Given/Sold</th>
+                      <th className="py-3 px-4 font-medium text-gray-600">Bales Size</th>
+                      <th className="py-3 px-4 font-medium text-gray-600">Revenue</th>
                       <th className="py-3 px-4 font-medium text-gray-600">Actions</th>
                     </tr>
                   </thead>
@@ -778,10 +803,10 @@ const HayStoragePage = () => {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-slate-900">
               <Eye className="h-5 w-5 text-blue-600" />
-              Infrastructure Details
+              Hay Storage Details
             </DialogTitle>
             <DialogDescription>
-              Complete information for this infrastructure facility
+              Complete information for this hay storage facility
             </DialogDescription>
           </DialogHeader>
           {viewingRecord && (
@@ -806,72 +831,47 @@ const HayStoragePage = () => {
                     <p className="text-slate-900 font-medium">{viewingRecord.region || 'N/A'}</p>
                   </div>
                   <div>
-                    <Label className="text-sm font-medium text-slate-600">Type</Label>
-                    <Badge className="bg-purple-100 text-purple-800">{viewingRecord.type || 'N/A'}</Badge>
+                    <Label className="text-sm font-medium text-slate-600">Storage Facility</Label>
+                    <p className="text-slate-900 font-medium">{viewingRecord.hay_storage_facility || 'N/A'}</p>
                   </div>
                 </div>
               </div>
 
-              {/* Capacity Information */}
+              {/* Bales Information */}
               <div className="bg-slate-50 rounded-xl p-4">
                 <h3 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
-                  <Warehouse className="h-4 w-4" />
-                  Capacity Information
+                  <Package className="h-4 w-4" />
+                  Bales Information
                 </h3>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <Label className="text-sm font-medium text-slate-600">Total Capacity</Label>
-                    <p className="text-slate-900 font-medium">{(viewingRecord.capacity || 0).toLocaleString()} units</p>
+                    <Label className="text-sm font-medium text-slate-600">Bales Given/Sold</Label>
+                    <p className="text-slate-900 font-medium">{viewingRecord.bales_given_sold || 0}</p>
                   </div>
                   <div>
-                    <Label className="text-sm font-medium text-slate-600">Current Stock</Label>
-                    <p className="text-slate-900 font-medium">{(viewingRecord.currentStock || 0).toLocaleString()} units</p>
+                    <Label className="text-sm font-medium text-slate-600">Bales Size</Label>
+                    <p className="text-slate-900 font-medium">{viewingRecord.bales_size || 'N/A'}</p>
                   </div>
                   <div>
-                    <Label className="text-sm font-medium text-slate-600">Utilization Rate</Label>
-                    <p className="text-slate-900 font-medium text-lg font-bold">
-                      {viewingRecord.capacity ? 
-                        `${((viewingRecord.currentStock || 0) / viewingRecord.capacity * 100).toFixed(1)}%` : 
-                        '0%'
-                      }
-                    </p>
-                  </div>
-                  <div>
-                    <Label className="text-sm font-medium text-slate-600">Status</Label>
-                    <Badge className={
-                      viewingRecord.status?.toLowerCase() === 'operational' ? 'bg-green-100 text-green-800' :
-                      viewingRecord.status?.toLowerCase() === 'under maintenance' ? 'bg-yellow-100 text-yellow-800' :
-                      'bg-red-100 text-red-800'
-                    }>
-                      {viewingRecord.status || 'N/A'}
-                    </Badge>
+                    <Label className="text-sm font-medium text-slate-600">Bales Stored Date</Label>
+                    <p className="text-slate-900 font-medium">{formatDate(viewingRecord.bales_storeddate)}</p>
                   </div>
                 </div>
               </div>
 
-              {/* Contact Information */}
-              {(viewingRecord.manager || viewingRecord.contact) && (
-                <div className="bg-slate-50 rounded-xl p-4">
-                  <h3 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
-                    <Users className="h-4 w-4" />
-                    Contact Information
-                  </h3>
-                  <div className="grid grid-cols-2 gap-4">
-                    {viewingRecord.manager && (
-                      <div>
-                        <Label className="text-sm font-medium text-slate-600">Manager</Label>
-                        <p className="text-slate-900 font-medium">{viewingRecord.manager}</p>
-                      </div>
-                    )}
-                    {viewingRecord.contact && (
-                      <div>
-                        <Label className="text-sm font-medium text-slate-600">Contact</Label>
-                        <p className="text-slate-900 font-medium">{viewingRecord.contact}</p>
-                      </div>
-                    )}
+              {/* Financial Information */}
+              <div className="bg-slate-50 rounded-xl p-4">
+                <h3 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
+                  <DollarSign className="h-4 w-4" />
+                  Financial Information
+                </h3>
+                <div className="grid grid-cols-1 gap-4">
+                  <div>
+                    <Label className="text-sm font-medium text-slate-600">Revenue from Sales</Label>
+                    <p className="text-slate-900 font-medium text-lg">{formatCurrency(viewingRecord.revenue_from_sales || 0)}</p>
                   </div>
                 </div>
-              )}
+              </div>
             </div>
           )}
           <DialogFooter>
@@ -884,8 +884,155 @@ const HayStoragePage = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Edit Record Dialog */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="sm:max-w-2xl bg-white rounded-2xl max-h-[90vh] overflow-hidden">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-slate-900">
+              <Edit className="h-5 w-5 text-green-600" />
+              Edit Hay Storage Record
+            </DialogTitle>
+            <DialogDescription>
+              Update the information for this hay storage facility
+            </DialogDescription>
+          </DialogHeader>
+          {editingRecord && (
+            <div className="space-y-6 py-4 overflow-y-auto max-h-[60vh]">
+              {/* Basic Information */}
+              <div className="bg-slate-50 rounded-xl p-4">
+                <h3 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
+                  <Building className="h-4 w-4" />
+                  Basic Information
+                </h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-date" className="text-sm font-medium text-slate-600">Date</Label>
+                    <Input
+                      id="edit-date"
+                      type="date"
+                      value={formatDateForInput(editingRecord.date)}
+                      onChange={(e) => handleEditChange('date', e.target.value)}
+                      className="border-gray-300 focus:border-blue-500"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-location" className="text-sm font-medium text-slate-600">Location</Label>
+                    <Input
+                      id="edit-location"
+                      value={editingRecord.location || ''}
+                      onChange={(e) => handleEditChange('location', e.target.value)}
+                      className="border-gray-300 focus:border-blue-500"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-region" className="text-sm font-medium text-slate-600">Region</Label>
+                    <Input
+                      id="edit-region"
+                      value={editingRecord.region || ''}
+                      onChange={(e) => handleEditChange('region', e.target.value)}
+                      className="border-gray-300 focus:border-blue-500"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-facility" className="text-sm font-medium text-slate-600">Storage Facility</Label>
+                    <Input
+                      id="edit-facility"
+                      value={editingRecord.hay_storage_facility || ''}
+                      onChange={(e) => handleEditChange('hay_storage_facility', e.target.value)}
+                      className="border-gray-300 focus:border-blue-500"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Bales Information */}
+              <div className="bg-slate-50 rounded-xl p-4">
+                <h3 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
+                  <Package className="h-4 w-4" />
+                  Bales Information
+                </h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-bales" className="text-sm font-medium text-slate-600">Bales Given/Sold</Label>
+                    <Input
+                      id="edit-bales"
+                      type="number"
+                      value={editingRecord.bales_given_sold || 0}
+                      onChange={(e) => handleEditChange('bales_given_sold', parseInt(e.target.value) || 0)}
+                      className="border-gray-300 focus:border-blue-500"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-bales-size" className="text-sm font-medium text-slate-600">Bales Size</Label>
+                    <Input
+                      id="edit-bales-size"
+                      value={editingRecord.bales_size || ''}
+                      onChange={(e) => handleEditChange('bales_size', e.target.value)}
+                      className="border-gray-300 focus:border-blue-500"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-stored-date" className="text-sm font-medium text-slate-600">Bales Stored Date</Label>
+                    <Input
+                      id="edit-stored-date"
+                      type="date"
+                      value={formatDateForInput(editingRecord.bales_storeddate)}
+                      onChange={(e) => handleEditChange('bales_storeddate', e.target.value)}
+                      className="border-gray-300 focus:border-blue-500"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Financial Information */}
+              <div className="bg-slate-50 rounded-xl p-4">
+                <h3 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
+                  <DollarSign className="h-4 w-4" />
+                  Financial Information
+                </h3>
+                <div className="grid grid-cols-1 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-revenue" className="text-sm font-medium text-slate-600">Revenue from Sales (Ksh)</Label>
+                    <Input
+                      id="edit-revenue"
+                      type="number"
+                      value={editingRecord.revenue_from_sales || 0}
+                      onChange={(e) => handleEditChange('revenue_from_sales', parseFloat(e.target.value) || 0)}
+                      className="border-gray-300 focus:border-blue-500"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter className="flex gap-2">
+            <Button 
+              variant="outline"
+              onClick={closeEditDialog}
+              disabled={saving}
+              className="border-gray-300 hover:bg-gray-50"
+            >
+              <X className="h-4 w-4 mr-2" />
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleSaveEdit}
+              disabled={saving}
+              className="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white"
+            >
+              <Save className="h-4 w-4 mr-2" />
+              {saving ? "Saving..." : "Save Changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
 
 export default HayStoragePage;
+
+function updateData(arg0: string, id: string, editingRecord: Infrastructure) {
+  throw new Error("Function not implemented.");
+}

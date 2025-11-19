@@ -41,10 +41,11 @@ export const fetchCollection = async (collectionName) => {
 // Fetch data from specific collections
 export const fetchData = async () => {
     try {
-        const [livestock, fodder, infrastructure, capacity, offtake, offtake0, users] = await Promise.all([
+        const [livestock, fodder,infrastructure,BoreholeStorage,  capacity, lofftake, fofftake, users] = await Promise.all([
             fetchCollection("Livestock Farmers"),
             fetchCollection("Fodder Farmers"),
             fetchCollection("Infrastructure Data"),
+            fetchCollection("BoreholeStorage"),
             fetchCollection("Capacity Building"),
             fetchCollection("Livestock Offtake Data"),
             fetchCollection("Fodder Offtake Data"),
@@ -52,7 +53,7 @@ export const fetchData = async () => {
           
         ]);
 
-        return { livestock, fodder, infrastructure, capacity, offtake, offtake0, users};
+        return { livestock, fodder, infrastructure,BoreholeStorage, capacity, lofftake, fofftake, users};
     } catch (error) {
         console.error("Error fetching all data:", error);
         throw error;

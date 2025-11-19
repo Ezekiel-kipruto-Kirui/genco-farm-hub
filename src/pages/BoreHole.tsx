@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { fetchData } from "@/lib/firebase";
 import { Button } from "@/components/ui/button";
@@ -16,9 +16,9 @@ import { useToast } from "@/hooks/use-toast";
 interface Borehole {
   id: string;
   date: any;
-  boreholeLocation?: string;
-  peopleUsingBorehole?: number;
+  location?: string;
   region?: string;
+  people?: number;
   waterUsed?: number;
 }
 
@@ -33,7 +33,7 @@ interface Filters {
 interface Stats {
   totalBoreholes: number;
   totalRegions: number;
-  totalPeopleServed: number;
+  totalPeople: number;
   totalWaterUsed: number;
 }
 
@@ -47,6 +47,7 @@ interface Pagination {
 
 // Constants
 const PAGE_LIMIT = 15;
+const SEARCH_DEBOUNCE_DELAY = 300; // milliseconds
 
 // Helper functions
 const parseDate = (date: any): Date | null => {
@@ -105,6 +106,7 @@ const BoreholePage = () => {
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [viewingRecord, setViewingRecord] = useState<Borehole | null>(null);
   
+  const searchTimeoutRef = useRef<NodeJS.Timeout>();
   const currentMonth = useMemo(getCurrentMonthDates, []);
 
   const [filters, setFilters] = useState<Filters>({
@@ -118,7 +120,7 @@ const BoreholePage = () => {
   const [stats, setStats] = useState<Stats>({
     totalBoreholes: 0,
     totalRegions: 0,
-    totalPeopleServed: 0,
+    totalPeople: 0,
     totalWaterUsed: 0
   });
 
@@ -137,103 +139,54 @@ const BoreholePage = () => {
       console.log("Starting borehole data fetch...");
       
       const data = await fetchData();
-      console.log("=== RAW FETCHED DATA ===", data);
       
-      // Check all possible data sources
-      const dataSources = [
-        { name: 'infrastructure', data: data.infrastructure },
-        { name: 'boreholes', data: data.boreholes },
-        { name: 'water', data: data.water },
-        { name: 'fodder', data: data.fodder },
-        { name: 'livestock', data: data.livestock }
-      ];
 
-      console.log("=== CHECKING DATA SOURCES ===");
-      dataSources.forEach(source => {
-        console.log(`${source.name}:`, source.data);
-        if (source.data && Array.isArray(source.data)) {
-          console.log(`${source.name} first item:`, source.data[0]);
-        }
-      });
-
-      let boreholeData: Borehole[] = [];
-
-      // Try to find borehole data in different collections
-      if (data.infrastructure && Array.isArray(data.infrastructure)) {
-        console.log("Found infrastructure data, processing...");
-        boreholeData = data.infrastructure.map((item: any, index: number) => {
-          console.log(`Processing infrastructure item ${index}:`, item);
-          
-          // Handle date parsing
-          let dateValue = item.date || item.Date || item.createdAt || item.timestamp;
-          
-          // If it's a Firestore timestamp object
-          if (dateValue && typeof dateValue === 'object') {
-            if (dateValue.toDate && typeof dateValue.toDate === 'function') {
-              dateValue = dateValue.toDate();
-            } else if (dateValue.seconds) {
-              dateValue = new Date(dateValue.seconds * 1000);
-            } else if (dateValue._seconds) {
-              dateValue = new Date(dateValue._seconds * 1000);
-            }
-          }
-
-          // Handle different field name variations for borehole data
-          const processedItem: Borehole = {
-            id: item.id || `infra-${index}-${Date.now()}`,
-            date: dateValue,
-            boreholeLocation: item.boreholeLocation || item.BoreholeLocation || item.location || item.Location || item.name || item.Name || '',
-            peopleUsingBorehole: Number(item.peopleUsingBorehole || item.PeopleUsingBorehole || item.peopleServed || item.PeopleServed || item.users || item.Users || 0),
-            region: item.region || item.Region || item.county || item.County || item.area || item.Area || '',
-            waterUsed: Number(item.waterUsed || item.WaterUsed || item.waterConsumption || item.WaterConsumption || item.consumption || item.Consumption || 0)
-          };
-
-          console.log(`Processed infrastructure item ${index}:`, processedItem);
-          return processedItem;
-        });
-      } else if (data.boreholes && Array.isArray(data.oreholes)) {
-        console.log("Found direct boreholes data, processing...");
-        boreholeData = data.boreholes.map((item: any, index: number) => {
-          console.log(`Processing borehole item ${index}:`, item);
-          
-          let dateValue = item.date || item.Date || item.createdAt || item.timestamp;
-          
-          if (dateValue && typeof dateValue === 'object') {
-            if (dateValue.toDate && typeof dateValue.toDate === 'function') {
-              dateValue = dateValue.toDate();
-            } else if (dateValue.seconds) {
-              dateValue = new Date(dateValue.seconds * 1000);
-            } else if (dateValue._seconds) {
-              dateValue = new Date(dateValue._seconds * 1000);
-            }
-          }
-
-          const processedItem: Borehole = {
-            id: item.id || `borehole-${index}-${Date.now()}`,
-            date: dateValue,
-            boreholeLocation: item.boreholeLocation || item.BoreholeLocation || item.location || item.Location || item.name || item.Name || '',
-            peopleUsingBorehole: Number(item.peopleUsingBorehole || item.PeopleUsingBorehole || item.peopleServed || item.PeopleServed || item.users || item.Users || 0),
-            region: item.region || item.Region || item.county || item.County || item.area || item.Area || '',
-            waterUsed: Number(item.waterUsed || item.WaterUsed || item.waterConsumption || item.WaterConsumption || item.consumption || item.Consumption || 0)
-          };
-
-          console.log(`Processed borehole item ${index}:`, processedItem);
-          return processedItem;
-        });
-      } else {
-        console.warn("No infrastructure or boreholes data found in response");
-        // Let's check if there's any data at all that might contain borehole info
+      if (!data.BoreholeStorage) {
+        console.warn("No BoreholeStorage data found in response");
+        // Check all available collections
         Object.keys(data).forEach(key => {
-          if (Array.isArray(data[key])) {
-            console.log(`Found array in ${key} with ${data[key].length} items`);
-            if (data[key].length > 0) {
-              console.log(`First item in ${key}:`, data[key][0]);
-            }
+          console.log(`Available collection: ${key}`, data[key]);
+          if (Array.isArray(data[key]) && data[key].length > 0) {
+            console.log(`First item in ${key}:`, data[key][0]);
           }
         });
+        setAllBoreholes([]);
+        return;
       }
 
-      console.log("=== FINAL PROCESSED BOREHOLE DATA ===", boreholeData);
+      const boreholeData = Array.isArray(data.BoreholeStorage) ? data.BoreholeStorage.map((item: any, index: number) => {
+        console.log(`Processing borehole item ${index}:`, item);
+        
+        // Handle date parsing
+        let dateValue = item.date || item.Date || item.createdAt || item.timestamp;
+        
+        // If it's a Firestore timestamp object
+        if (dateValue && typeof dateValue === 'object') {
+          if (dateValue.toDate && typeof dateValue.toDate === 'function') {
+            dateValue = dateValue.toDate();
+          } else if (dateValue.seconds) {
+            dateValue = new Date(dateValue.seconds * 1000);
+          } else if (dateValue._seconds) {
+            dateValue = new Date(dateValue._seconds * 1000);
+          }
+        }
+
+        // Handle different field name variations for borehole data
+        const processedItem = {
+          id: item.id || `borehole-${index}-${Date.now()}`,
+          date: dateValue,
+          location: item.	BoreholeLocation || 'No location',
+          region: item.Region || '',
+          people: Number(item.PeopleUsingBorehole || 0),
+          waterUsed: Number(item.WaterUsed || 0)
+        };
+
+        console.log(`Processed borehole item ${index}:`, processedItem);
+        return processedItem;
+
+      }) : [];
+
+      console.log("Final processed borehole data:", boreholeData);
       setAllBoreholes(boreholeData);
       
     } catch (error) {
@@ -256,7 +209,7 @@ const BoreholePage = () => {
       setStats({
         totalBoreholes: 0,
         totalRegions: 0,
-        totalPeopleServed: 0,
+        totalPeople: 0,
         totalWaterUsed: 0
       });
       return;
@@ -271,7 +224,7 @@ const BoreholePage = () => {
       }
 
       // Location filter
-      if (filters.location !== "all" && record.boreholeLocation?.toLowerCase() !== filters.location.toLowerCase()) {
+      if (filters.location !== "all" && record.location?.toLowerCase() !== filters.location.toLowerCase()) {
         return false;
       }
 
@@ -299,7 +252,7 @@ const BoreholePage = () => {
       if (filters.search) {
         const searchTerm = filters.search.toLowerCase();
         const searchMatch = [
-          record.boreholeLocation, 
+          record.location, 
           record.region
         ].some(field => field?.toLowerCase().includes(searchTerm));
         if (!searchMatch) return false;
@@ -312,18 +265,18 @@ const BoreholePage = () => {
     setFilteredBoreholes(filtered);
     
     // Update stats
-    const totalPeopleServed = filtered.reduce((sum, record) => sum + (record.peopleUsingBorehole || 0), 0);
+    const totalPeople = filtered.reduce((sum, record) => sum + (record.people || 0), 0);
     const totalWaterUsed = filtered.reduce((sum, record) => sum + (record.waterUsed || 0), 0);
     
     // Count unique regions from filtered data
     const uniqueRegions = new Set(filtered.map(f => f.region).filter(Boolean));
 
-    console.log("Stats - Total Boreholes:", filtered.length, "Regions:", uniqueRegions.size, "People Served:", totalPeopleServed, "Water Used:", totalWaterUsed);
+    console.log("Stats - Total Boreholes:", filtered.length, "Regions:", uniqueRegions.size, "People:", totalPeople, "Water Used:", totalWaterUsed);
 
     setStats({
       totalBoreholes: filtered.length,
       totalRegions: uniqueRegions.size,
-      totalPeopleServed,
+      totalPeople,
       totalWaterUsed
     });
 
@@ -346,15 +299,34 @@ const BoreholePage = () => {
     applyFilters();
   }, [applyFilters]);
 
-  // Handlers
-  const handleSearch = (value: string) => {
-    setFilters(prev => ({ ...prev, search: value }));
-  };
+  // Optimized search handler with debouncing
+  const handleSearch = useCallback((value: string) => {
+    // Clear previous timeout
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
 
-  const handleFilterChange = (key: keyof Filters, value: string) => {
+    // Set new timeout
+    searchTimeoutRef.current = setTimeout(() => {
+      setFilters(prev => ({ ...prev, search: value }));
+      setPagination(prev => ({ ...prev, page: 1 }));
+    }, SEARCH_DEBOUNCE_DELAY);
+  }, []);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Filter change handler
+  const handleFilterChange = useCallback((key: keyof Filters, value: string) => {
     setFilters(prev => ({ ...prev, [key]: value }));
     setPagination(prev => ({ ...prev, page: 1 }));
-  };
+  }, []);
 
   const handleExport = async () => {
     try {
@@ -370,14 +342,14 @@ const BoreholePage = () => {
       }
 
       const csvData = filteredBoreholes.map(record => [
-        record.boreholeLocation || 'N/A',
         formatDate(record.date),
-        (record.peopleUsingBorehole || 0).toString(),
+        record.location || 'N/A',
         record.region || 'N/A',
+        (record.people || 0).toString(),
         (record.waterUsed || 0).toString()
       ]);
 
-      const headers = ['Borehole Location', 'Date', 'People Using Borehole', 'Region', 'Water Used'];
+      const headers = ['Date', 'Borehole Location', 'Region', 'People Using Water', 'Water Used'];
       const csvContent = [headers, ...csvData]
         .map(row => row.map(field => `"${field}"`).join(','))
         .join('\n');
@@ -453,15 +425,14 @@ const BoreholePage = () => {
     return regions;
   }, [allBoreholes]);
 
-  const uniqueLocations = useMemo(() => {
-    const locations = [...new Set(allBoreholes.map(f => f.boreholeLocation).filter(Boolean))];
-    console.log("Unique borehole locations:", locations);
-    return locations;
-  }, [allBoreholes]);
-
   const currentPageRecords = useMemo(getCurrentPageRecords, [getCurrentPageRecords]);
 
   const clearAllFilters = () => {
+    // Clear any pending search timeout
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+    
     setFilters({
       search: "",
       startDate: "",
@@ -475,8 +446,8 @@ const BoreholePage = () => {
     setFilters(prev => ({ ...prev, ...currentMonth }));
   };
 
-  // Render components
-  const StatsCard = ({ title, value, icon: Icon, description }: any) => (
+  // Memoized components to prevent re-renders
+  const StatsCard = useCallback(({ title, value, icon: Icon, description }: any) => (
     <Card className="bg-white text-slate-900 shadow-lg border border-gray-200 relative overflow-hidden">
       <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-blue-500 to-cyan-600"></div>
       
@@ -497,16 +468,15 @@ const BoreholePage = () => {
         </div>
       </CardContent>
     </Card>
-  );
+  ), []);
 
-  const FilterSection = () => (
+  const FilterSection = useMemo(() => (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
       <div className="space-y-2">
         <Label htmlFor="search" className="font-semibold text-gray-700">Search</Label>
         <Input
           id="search"
           placeholder="Search boreholes..."
-          value={filters.search}
           onChange={(e) => handleSearch(e.target.value)}
           className="border-gray-300 focus:border-blue-500 focus:ring-blue-500 bg-white"
         />
@@ -526,22 +496,6 @@ const BoreholePage = () => {
           </SelectContent>
         </Select>
       </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="location" className="font-semibold text-gray-700">Borehole Location</Label>
-        <Select value={filters.location} onValueChange={(value) => handleFilterChange("location", value)}>
-          <SelectTrigger className="border-gray-300 focus:border-blue-500 focus:ring-blue-500 bg-white">
-            <SelectValue placeholder="Select location" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Locations</SelectItem>
-            {uniqueLocations.slice(0, 20).map(location => (
-              <SelectItem key={location} value={location}>{location}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
       <div className="space-y-2">
         <Label htmlFor="startDate" className="font-semibold text-gray-700">From Date</Label>
         <Input
@@ -564,9 +518,9 @@ const BoreholePage = () => {
         />
       </div>
     </div>
-  );
+  ), [filters, uniqueRegions, handleSearch, handleFilterChange]);
 
-  const TableRow = ({ record }: { record: Borehole }) => (
+  const TableRow = useCallback(({ record }: { record: Borehole }) => (
     <tr className="border-b hover:bg-blue-50 transition-colors duration-200 group text-sm">
       <td className="py-3 px-4">
         <Checkbox
@@ -574,15 +528,15 @@ const BoreholePage = () => {
           onCheckedChange={() => handleSelectRecord(record.id)}
         />
       </td>
-      <td className="py-3 px-4 font-medium">{record.boreholeLocation || 'N/A'}</td>
       <td className="py-3 px-4">{formatDate(record.date)}</td>
-      <td className="py-3 px-4">
-        <span className="font-bold text-blue-700">{record.peopleUsingBorehole || 0}</span>
-      </td>
+      <td className="py-3 px-4 font-medium">{record.location || 'N/A'}</td>
       <td className="py-3 px-4">
         <Badge className="bg-green-100 text-green-800">
           {record.region || 'N/A'}
         </Badge>
+      </td>
+      <td className="py-3 px-4">
+        <span className="font-bold text-blue-700">{record.people || 0}</span>
       </td>
       <td className="py-3 px-4">
         <span className="font-bold text-cyan-700">{record.waterUsed || 0} L</span>
@@ -600,25 +554,17 @@ const BoreholePage = () => {
         </div>
       </td>
     </tr>
-  );
+  ), [selectedRecords, handleSelectRecord, openViewDialog]);
 
   return (
     <div className="space-y-6">
       {/* Header with Action Buttons */}
       <div className="flex md:flex-row flex-col justify-between items-start sm:items-center gap-4">
         <div>
-          <h2 className="text-2xl font-bold mb-2 bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
+          <h2 className="text-xl font-bold mb-2 bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
             Borehole Data
           </h2>
-          <p className="text-muted-foreground">Manage borehole and water usage records</p>
-          <p className="text-sm text-gray-500">
-            Loaded {allBoreholes.length} boreholes • Showing {filteredBoreholes.length} after filters
-          </p>
-          {allBoreholes.length === 0 && !loading && (
-            <p className="text-sm text-orange-600 mt-2">
-              No borehole data found. Check browser console for data structure details.
-            </p>
-          )}
+         
         </div>
 
         <div className="flex flex-wrap gap-2">
@@ -667,7 +613,7 @@ const BoreholePage = () => {
 
         <StatsCard 
           title="People Served" 
-          value={stats.totalPeopleServed.toLocaleString()} 
+          value={stats.totalPeople.toLocaleString()} 
           icon={Users}
           description="Total people using boreholes"
         />
@@ -683,7 +629,7 @@ const BoreholePage = () => {
       {/* Filters Section */}
       <Card className="shadow-lg border-0 bg-white">
         <CardContent className="space-y-4 pt-6">
-          <FilterSection />
+          {FilterSection}
         </CardContent>
       </Card>
 
@@ -711,10 +657,10 @@ const BoreholePage = () => {
                           onCheckedChange={handleSelectAll}
                         />
                       </th>
-                      <th className="py-3 px-4 font-medium text-gray-600">Borehole Location</th>
                       <th className="py-3 px-4 font-medium text-gray-600">Date</th>
-                      <th className="py-3 px-4 font-medium text-gray-600">People Using Borehole</th>
+                      <th className="py-3 px-4 font-medium text-gray-600">Borehole Location</th>
                       <th className="py-3 px-4 font-medium text-gray-600">Region</th>
+                      <th className="py-3 px-4 font-medium text-gray-600">People Using Water</th>
                       <th className="py-3 px-4 font-medium text-gray-600">Water Used</th>
                       <th className="py-3 px-4 font-medium text-gray-600">Actions</th>
                     </tr>
@@ -780,16 +726,16 @@ const BoreholePage = () => {
                 </h3>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
+                    <Label className="text-sm font-medium text-slate-600">Date Recorded</Label>
+                    <p className="text-slate-900 font-medium">{formatDate(viewingRecord.date)}</p>
+                  </div>
+                  <div>
                     <Label className="text-sm font-medium text-slate-600">Borehole Location</Label>
-                    <p className="text-slate-900 font-medium">{viewingRecord.boreholeLocation || 'N/A'}</p>
+                    <p className="text-slate-900 font-medium">{viewingRecord.location || 'N/A'}</p>
                   </div>
                   <div>
                     <Label className="text-sm font-medium text-slate-600">Region</Label>
                     <Badge className="bg-green-100 text-green-800">{viewingRecord.region || 'N/A'}</Badge>
-                  </div>
-                  <div>
-                    <Label className="text-sm font-medium text-slate-600">Date Recorded</Label>
-                    <p className="text-slate-900 font-medium">{formatDate(viewingRecord.date)}</p>
                   </div>
                 </div>
               </div>
@@ -802,9 +748,9 @@ const BoreholePage = () => {
                 </h3>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <Label className="text-sm font-medium text-slate-600">People Using Borehole</Label>
+                    <Label className="text-sm font-medium text-slate-600">People Using Water</Label>
                     <p className="text-slate-900 font-medium text-lg font-bold text-blue-700">
-                      {viewingRecord.peopleUsingBorehole || 0}
+                      {viewingRecord.people || 0}
                     </p>
                   </div>
                   <div>
@@ -826,8 +772,8 @@ const BoreholePage = () => {
                   <div className="flex justify-between items-center">
                     <Label className="text-sm font-medium text-slate-600">Average Water per Person</Label>
                     <p className="text-slate-900 font-medium">
-                      {viewingRecord.peopleUsingBorehole && viewingRecord.waterUsed && viewingRecord.peopleUsingBorehole > 0 
-                        ? `${(viewingRecord.waterUsed / viewingRecord.peopleUsingBorehole).toFixed(1)} liters/person`
+                      {viewingRecord.people && viewingRecord.waterUsed && viewingRecord.people > 0 
+                        ? `${(viewingRecord.waterUsed / viewingRecord.people).toFixed(1)} liters/person`
                         : 'N/A'
                       }
                     </p>

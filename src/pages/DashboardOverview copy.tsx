@@ -3,7 +3,7 @@ import { collection, getDocs, addDoc, query, orderBy, limit, deleteDoc, doc, upd
 import { db } from "@/lib/firebase";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -23,7 +23,9 @@ import {
   TrendingUp,
   Map,
   BarChart3,
-  Table
+  Table,
+  User,
+  Briefcase
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -68,6 +70,11 @@ const StatCard = ({ title, icon, maleCount, femaleCount, total, gradient }: Stat
   </Card>
 );
 
+interface Participant {
+  name: string;
+  role: string;
+}
+
 interface Activity {
   id: string;
   activityName: string;
@@ -75,8 +82,7 @@ interface Activity {
   numberOfPersons: number;
   county: string;
   location: string;
-  namesOfPersons: string;
-  roles: string;
+  participants: Participant[];
   subcounty: string;
   createdAt: any;
 }
@@ -89,6 +95,9 @@ interface RegionStats {
 }
 
 const ActivityTable = ({ activities }: { activities: Activity[] }) => {
+  const [selectedActivity, setSelectedActivity] = useState<Activity | null>(null);
+  const [isParticipantsDialogOpen, setIsParticipantsDialogOpen] = useState(false);
+
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
       year: 'numeric',
@@ -97,59 +106,138 @@ const ActivityTable = ({ activities }: { activities: Activity[] }) => {
     });
   };
 
+  const openParticipantsDialog = (activity: Activity) => {
+    setSelectedActivity(activity);
+    setIsParticipantsDialogOpen(true);
+  };
+
   return (
-    <div className="bg-white rounded-2xl border-0 shadow-lg overflow-hidden">
-      <div className="overflow-x-auto">
-        <table className="w-full">
-          <thead>
-            <tr className="bg-blue-500 text-white">
-              <th className="p-3 text-left font-semibold text-sm">Activity Name</th>
-              <th className="p-3 text-left font-semibold text-sm">Date</th>
-              <th className="p-3 text-left font-semibold text-sm">Location</th>
-              <th className="p-3 text-left font-semibold text-sm">Participants</th>
-              <th className="p-3 text-left font-semibold text-sm">County</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {activities.map((activity, index) => (
-              <tr 
-                key={activity.id} 
-                className="hover:bg-gray-50 transition-colors duration-200 group"
-              >
-                <td className="p-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-2 h-2 bg-gradient-to-r from-green-500 to-blue-500 rounded-full"></div>
-                    <span className="font-medium text-gray-900 group-hover:text-green-600 transition-colors">
-                      {activity.activityName}
-                    </span>
-                  </div>
-                </td>
-                <td className="p-3">
-                  <Badge variant="secondary" className="bg-green-100 text-green-700 border-0">
-                    {formatDate(activity.date)}
-                  </Badge>
-                </td>
-                <td className="p-3">
-                  <div className="flex items-center gap-2">
-                    <MapPin className="h-4 w-4 text-green-500" />
-                    <span className="text-gray-600">{activity.location}</span>
-                  </div>
-                </td>
-                <td className="p-3">
-                  <div className="flex items-center gap-2">
-                    <Users className="h-4 w-4 text-blue-500" />
-                    <span className="font-semibold text-gray-700">{activity.numberOfPersons}</span>
-                  </div>
-                </td>
-                <td className="p-3">
-                  <span className="text-gray-600">{activity.county}</span>
-                </td>
+    <>
+      <div className="bg-white rounded-2xl border-0 shadow-lg overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="bg-blue-500 text-white">
+                <th className="p-3 text-left font-semibold text-sm">Activity Name</th>
+                <th className="p-3 text-left font-semibold text-sm">Date</th>
+                <th className="p-3 text-left font-semibold text-sm">Location</th>
+                <th className="p-3 text-left font-semibold text-sm">Participants</th>
+                <th className="p-3 text-left font-semibold text-sm">County</th>
+                <th className="p-3 text-left font-semibold text-sm">Actions</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {activities.map((activity, index) => (
+                <tr 
+                  key={activity.id} 
+                  className="hover:bg-gray-50 transition-colors duration-200 group"
+                >
+                  <td className="p-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-2 h-2 bg-gradient-to-r from-green-500 to-blue-500 rounded-full"></div>
+                      <span className="font-medium text-gray-900 group-hover:text-green-600 transition-colors">
+                        {activity.activityName}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="p-3">
+                    <Badge variant="secondary" className="bg-green-100 text-green-700 border-0">
+                      {formatDate(activity.date)}
+                    </Badge>
+                  </td>
+                  <td className="p-3">
+                    <div className="flex items-center gap-2">
+                      <MapPin className="h-4 w-4 text-green-500" />
+                      <span className="text-gray-600">{activity.location}</span>
+                    </div>
+                  </td>
+                  <td className="p-3">
+                    <div className="flex items-center gap-2">
+                      <Users className="h-4 w-4 text-blue-500" />
+                      <span className="font-semibold text-gray-700">{activity.numberOfPersons}</span>
+                    </div>
+                  </td>
+                  <td className="p-3">
+                    <span className="text-gray-600">{activity.county}</span>
+                  </td>
+                  <td className="p-3">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => openParticipantsDialog(activity)}
+                      className="h-8 px-3 text-xs border-blue-200 text-blue-600 hover:bg-blue-50 hover:text-blue-700"
+                    >
+                      <Eye className="h-3 w-3 mr-1" />
+                      View Participants
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
-    </div>
+
+      {/* Participants Dialog */}
+      <Dialog open={isParticipantsDialogOpen} onOpenChange={setIsParticipantsDialogOpen}>
+        <DialogContent className="sm:max-w-2xl bg-white rounded-2xl border-0 shadow-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold bg-gradient-to-r from-gray-800 to-blue-600 bg-clip-text text-transparent flex items-center gap-2">
+              <Users className="h-5 w-5" />
+              Participants Details
+            </DialogTitle>
+            <DialogDescription>
+              {selectedActivity?.activityName} - {selectedActivity && formatDate(selectedActivity.date)}
+            </DialogDescription>
+          </DialogHeader>
+          {selectedActivity && (
+            <div className="space-y-4 max-h-[60vh] overflow-y-auto">
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <Label className="font-semibold text-gray-700">Location:</Label>
+                  <p className="text-gray-600">{selectedActivity.location}, {selectedActivity.county}</p>
+                </div>
+                <div>
+                  <Label className="font-semibold text-gray-700">Total Participants:</Label>
+                  <p className="text-gray-600">{selectedActivity.numberOfPersons}</p>
+                </div>
+              </div>
+              
+              <div className="border-t pt-4">
+                <h4 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                  <User className="h-4 w-4 text-green-500" />
+                  Participants List
+                </h4>
+                <div className="space-y-3">
+                  {selectedActivity.participants && selectedActivity.participants.length > 0 ? (
+                    selectedActivity.participants.map((participant, index) => (
+                      <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white text-sm font-semibold">
+                            {index + 1}
+                          </div>
+                          <div>
+                            <p className="font-medium text-gray-900">{participant.name}</p>
+                            <p className="text-sm text-gray-600 flex items-center gap-1">
+                              <Briefcase className="h-3 w-3" />
+                              {participant.role}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-center p-4 text-gray-500">
+                      No participants added for this activity.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
   );
 };
 
@@ -189,12 +277,13 @@ const DashboardOverview = () => {
     activityName: "",
     date: "",
     numberOfPersons: "",
-    namesOfPersons: "",
-    roles: "",
     county: "",
     subcounty: "",
     location: "",
   });
+  const [participants, setParticipants] = useState<Participant[]>([
+    { name: "", role: "" }
+  ]);
   const { toast } = useToast();
   const [stats, setStats] = useState({
     totalFarmers: 0,
@@ -353,11 +442,46 @@ const DashboardOverview = () => {
     }
   };
 
+  // Participant management functions
+  const addParticipant = () => {
+    setParticipants([...participants, { name: "", role: "" }]);
+  };
+
+  const updateParticipant = (index: number, field: keyof Participant, value: string) => {
+    const updatedParticipants = [...participants];
+    updatedParticipants[index][field] = value;
+    setParticipants(updatedParticipants);
+  };
+
+  const removeParticipant = (index: number) => {
+    if (participants.length > 1) {
+      const updatedParticipants = participants.filter((_, i) => i !== index);
+      setParticipants(updatedParticipants);
+    }
+  };
+
+  const clearParticipants = () => {
+    setParticipants([{ name: "", role: "" }]);
+  };
+
   const handleAddActivity = async () => {
     try {
+      // Filter out empty participants
+      const validParticipants = participants.filter(p => p.name.trim() !== "" && p.role.trim() !== "");
+      
+      if (validParticipants.length === 0) {
+        toast({
+          title: "Validation Error",
+          description: "Please add at least one participant with name and role",
+          variant: "destructive",
+        });
+        return;
+      }
+
       await addDoc(collection(db, "Recent Activities"), {
         ...activityForm,
-        numberOfPersons: parseInt(activityForm.numberOfPersons),
+        numberOfPersons: validParticipants.length,
+        participants: validParticipants,
         createdAt: new Date(),
       });
       toast({
@@ -369,12 +493,11 @@ const DashboardOverview = () => {
         activityName: "",
         date: "",
         numberOfPersons: "",
-        namesOfPersons: "",
-        roles: "",
         county: "",
         subcounty: "",
         location: "",
       });
+      clearParticipants();
       setIsAddDialogOpen(false);
       fetchRecentActivities();
     } catch (error) {
@@ -391,9 +514,22 @@ const DashboardOverview = () => {
     if (!editingActivity) return;
 
     try {
+      // Filter out empty participants
+      const validParticipants = participants.filter(p => p.name.trim() !== "" && p.role.trim() !== "");
+      
+      if (validParticipants.length === 0) {
+        toast({
+          title: "Validation Error",
+          description: "Please add at least one participant with name and role",
+          variant: "destructive",
+        });
+        return;
+      }
+
       await updateDoc(doc(db, "Recent Activities", editingActivity.id), {
         ...activityForm,
-        numberOfPersons: parseInt(activityForm.numberOfPersons),
+        numberOfPersons: validParticipants.length,
+        participants: validParticipants,
       });
       toast({
         title: "Success",
@@ -406,12 +542,11 @@ const DashboardOverview = () => {
         activityName: "",
         date: "",
         numberOfPersons: "",
-        namesOfPersons: "",
-        roles: "",
         county: "",
         subcounty: "",
         location: "",
       });
+      clearParticipants();
       fetchRecentActivities();
       fetchAllActivities();
     } catch (error) {
@@ -450,12 +585,11 @@ const DashboardOverview = () => {
       activityName: activity.activityName,
       date: activity.date,
       numberOfPersons: activity.numberOfPersons.toString(),
-      namesOfPersons: activity.namesOfPersons,
-      roles: activity.roles,
       county: activity.county,
       subcounty: activity.subcounty,
       location: activity.location,
     });
+    setParticipants(activity.participants || [{ name: "", role: "" }]);
     setIsEditDialogOpen(true);
   };
 
@@ -607,7 +741,7 @@ const DashboardOverview = () => {
                           Add New Activity
                         </Button>
                       </DialogTrigger>
-                      <DialogContent className="sm:max-w-[600px] bg-white rounded-2xl border-0 shadow-2xl">
+                      <DialogContent className="sm:max-w-[800px] bg-white rounded-2xl border-0 shadow-2xl max-h-[90vh] overflow-y-auto">
                         <DialogHeader>
                           <DialogTitle className="text-2xl font-bold bg-gradient-to-r from-gray-800 to-green-600 bg-clip-text text-transparent">
                             Create New Activity
@@ -616,7 +750,7 @@ const DashboardOverview = () => {
                         <div className="grid gap-6 py-4">
                           <div className="grid grid-cols-2 gap-4">
                             <div className="space-y-2">
-                              <Label htmlFor="activityName" className="text-sm font-semibold text-gray-700">Activity Name</Label>
+                              <Label htmlFor="activityName" className="text-sm font-semibold text-gray-700">Activity Name *</Label>
                               <Input
                                 id="activityName"
                                 value={activityForm.activityName}
@@ -626,7 +760,7 @@ const DashboardOverview = () => {
                               />
                             </div>
                             <div className="space-y-2">
-                              <Label htmlFor="date" className="text-sm font-semibold text-gray-700">Date</Label>
+                              <Label htmlFor="date" className="text-sm font-semibold text-gray-700">Date *</Label>
                               <Input
                                 id="date"
                                 type="date"
@@ -638,18 +772,7 @@ const DashboardOverview = () => {
                           </div>
                           <div className="grid grid-cols-2 gap-4">
                             <div className="space-y-2">
-                              <Label htmlFor="numberOfPersons" className="text-sm font-semibold text-gray-700">Participants</Label>
-                              <Input
-                                id="numberOfPersons"
-                                type="number"
-                                value={activityForm.numberOfPersons}
-                                onChange={(e) => setActivityForm({...activityForm, numberOfPersons: e.target.value})}
-                                placeholder="Number of participants"
-                                className="rounded-xl border-gray-300 focus:border-green-500 focus:ring-green-500 transition-all"
-                              />
-                            </div>
-                            <div className="space-y-2">
-                              <Label htmlFor="county" className="text-sm font-semibold text-gray-700">County</Label>
+                              <Label htmlFor="county" className="text-sm font-semibold text-gray-700">County *</Label>
                               <Input
                                 id="county"
                                 value={activityForm.county}
@@ -658,8 +781,6 @@ const DashboardOverview = () => {
                                 className="rounded-xl border-gray-300 focus:border-green-500 focus:ring-green-500 transition-all"
                               />
                             </div>
-                          </div>
-                          <div className="grid grid-cols-2 gap-4">
                             <div className="space-y-2">
                               <Label htmlFor="subcounty" className="text-sm font-semibold text-gray-700">Subcounty</Label>
                               <Input
@@ -670,42 +791,89 @@ const DashboardOverview = () => {
                                 className="rounded-xl border-gray-300 focus:border-green-500 focus:ring-green-500 transition-all"
                               />
                             </div>
-                            <div className="space-y-2">
-                              <Label htmlFor="location" className="text-sm font-semibold text-gray-700">Location</Label>
-                              <Input
-                                id="location"
-                                value={activityForm.location}
-                                onChange={(e) => setActivityForm({...activityForm, location: e.target.value})}
-                                placeholder="Enter location"
-                                className="rounded-xl border-gray-300 focus:border-green-500 focus:ring-green-500 transition-all"
-                              />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="location" className="text-sm font-semibold text-gray-700">Location *</Label>
+                            <Input
+                              id="location"
+                              value={activityForm.location}
+                              onChange={(e) => setActivityForm({...activityForm, location: e.target.value})}
+                              placeholder="Enter location"
+                              className="rounded-xl border-gray-300 focus:border-green-500 focus:ring-green-500 transition-all"
+                            />
+                          </div>
+                          
+                          {/* Participants Section */}
+                          <div className="space-y-4 border-t pt-6">
+                            <div className="flex items-center justify-between">
+                              <Label className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+                                <Users className="h-5 w-5 text-blue-500" />
+                                Participants ({participants.length})
+                              </Label>
+                              <Button
+                                type="button"
+                                onClick={addParticipant}
+                                variant="outline"
+                                className="border-green-500 text-green-600 hover:bg-green-50 rounded-lg"
+                              >
+                                <Plus className="h-4 w-4 mr-1" />
+                                Add Participant
+                              </Button>
+                            </div>
+                            
+                            <div className="space-y-3 max-h-60 overflow-y-auto pr-2">
+                              {participants.map((participant, index) => (
+                                <div key={index} className="grid grid-cols-12 gap-3 items-start p-3 bg-gray-50 rounded-lg border border-gray-200">
+                                  <div className="col-span-1 flex items-center justify-center pt-2">
+                                    <div className="w-6 h-6 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white text-xs font-semibold">
+                                      {index + 1}
+                                    </div>
+                                  </div>
+                                  <div className="col-span-5">
+                                    <Label htmlFor={`participant-name-${index}`} className="text-xs font-medium text-gray-700">Name *</Label>
+                                    <Input
+                                      id={`participant-name-${index}`}
+                                      value={participant.name}
+                                      onChange={(e) => updateParticipant(index, 'name', e.target.value)}
+                                      placeholder="Enter participant name"
+                                      className="rounded-lg border-gray-300 focus:border-blue-500 focus:ring-blue-500 text-sm"
+                                    />
+                                  </div>
+                                  <div className="col-span-5">
+                                    <Label htmlFor={`participant-role-${index}`} className="text-xs font-medium text-gray-700">Role *</Label>
+                                    <Input
+                                      id={`participant-role-${index}`}
+                                      value={participant.role}
+                                      onChange={(e) => updateParticipant(index, 'role', e.target.value)}
+                                      placeholder="Enter role"
+                                      className="rounded-lg border-gray-300 focus:border-blue-500 focus:ring-blue-500 text-sm"
+                                    />
+                                  </div>
+                                  <div className="col-span-1 flex items-center justify-center pt-2">
+                                    {participants.length > 1 && (
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => removeParticipant(index)}
+                                        className="h-8 w-8 p-0 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg"
+                                      >
+                                        <X className="h-4 w-4" />
+                                      </Button>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
                             </div>
                           </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="namesOfPersons" className="text-sm font-semibold text-gray-700">Participant Names</Label>
-                            <Textarea
-                              id="namesOfPersons"
-                              value={activityForm.namesOfPersons}
-                              onChange={(e) => setActivityForm({...activityForm, namesOfPersons: e.target.value})}
-                              placeholder="Enter names separated by commas"
-                              className="rounded-xl border-gray-300 focus:border-green-500 focus:ring-green-500 transition-all min-h-[80px]"
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="roles" className="text-sm font-semibold text-gray-700">Roles</Label>
-                            <Textarea
-                              id="roles"
-                              value={activityForm.roles}
-                              onChange={(e) => setActivityForm({...activityForm, roles: e.target.value})}
-                              placeholder="Enter roles separated by commas"
-                              className="rounded-xl border-gray-300 focus:border-green-500 focus:ring-green-500 transition-all min-h-[80px]"
-                            />
-                          </div>
                         </div>
-                        <div className="flex justify-end gap-3">
+                        <div className="flex justify-end gap-3 pt-4 border-t">
                           <Button 
                             variant="outline" 
-                            onClick={() => setIsAddDialogOpen(false)}
+                            onClick={() => {
+                              setIsAddDialogOpen(false);
+                              clearParticipants();
+                            }}
                             className="rounded-xl border-gray-300 hover:border-gray-400 transition-all"
                           >
                             Cancel
@@ -765,18 +933,6 @@ const DashboardOverview = () => {
                             <Users className="h-4 w-4 text-green-500" />
                             <span className="font-semibold">{activity.numberOfPersons} participants</span>
                           </div>
-                          {activity.namesOfPersons && (
-                            <div>
-                              <p className="font-semibold text-green-600 text-sm">Participants:</p>
-                              <p className="text-sm text-gray-700">{activity.namesOfPersons}</p>
-                            </div>
-                          )}
-                          {activity.roles && (
-                            <div>
-                              <p className="font-semibold text-green-600 text-sm">Roles:</p>
-                              <p className="text-sm text-gray-700">{activity.roles}</p>
-                            </div>
-                          )}
                         </div>
                       </div>
                       <div className="flex gap-2 ml-4">
@@ -806,7 +962,7 @@ const DashboardOverview = () => {
 
         {/* Edit Activity Dialog */}
         <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-          <DialogContent className="sm:max-w-[600px] bg-white rounded-2xl border-0 shadow-2xl">
+          <DialogContent className="sm:max-w-[800px] bg-white rounded-2xl border-0 shadow-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="text-2xl font-bold bg-gradient-to-r from-gray-800 to-green-600 bg-clip-text text-transparent">
                 Edit Activity
@@ -815,7 +971,7 @@ const DashboardOverview = () => {
             <div className="grid gap-6 py-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="edit-activityName" className="text-sm font-semibold text-gray-700">Activity Name</Label>
+                  <Label htmlFor="edit-activityName" className="text-sm font-semibold text-gray-700">Activity Name *</Label>
                   <Input
                     id="edit-activityName"
                     value={activityForm.activityName}
@@ -825,7 +981,7 @@ const DashboardOverview = () => {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="edit-date" className="text-sm font-semibold text-gray-700">Date</Label>
+                  <Label htmlFor="edit-date" className="text-sm font-semibold text-gray-700">Date *</Label>
                   <Input
                     id="edit-date"
                     type="date"
@@ -837,18 +993,7 @@ const DashboardOverview = () => {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="edit-numberOfPersons" className="text-sm font-semibold text-gray-700">Participants</Label>
-                  <Input
-                    id="edit-numberOfPersons"
-                    type="number"
-                    value={activityForm.numberOfPersons}
-                    onChange={(e) => setActivityForm({...activityForm, numberOfPersons: e.target.value})}
-                    placeholder="Number of participants"
-                    className="rounded-xl border-gray-300 focus:border-green-500 focus:ring-green-500 transition-all"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-county" className="text-sm font-semibold text-gray-700">County</Label>
+                  <Label htmlFor="edit-county" className="text-sm font-semibold text-gray-700">County *</Label>
                   <Input
                     id="edit-county"
                     value={activityForm.county}
@@ -857,8 +1002,6 @@ const DashboardOverview = () => {
                     className="rounded-xl border-gray-300 focus:border-green-500 focus:ring-green-500 transition-all"
                   />
                 </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="edit-subcounty" className="text-sm font-semibold text-gray-700">Subcounty</Label>
                   <Input
@@ -869,42 +1012,89 @@ const DashboardOverview = () => {
                     className="rounded-xl border-gray-300 focus:border-green-500 focus:ring-green-500 transition-all"
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-location" className="text-sm font-semibold text-gray-700">Location</Label>
-                  <Input
-                    id="edit-location"
-                    value={activityForm.location}
-                    onChange={(e) => setActivityForm({...activityForm, location: e.target.value})}
-                    placeholder="Enter location"
-                    className="rounded-xl border-gray-300 focus:border-green-500 focus:ring-green-500 transition-all"
-                  />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-location" className="text-sm font-semibold text-gray-700">Location *</Label>
+                <Input
+                  id="edit-location"
+                  value={activityForm.location}
+                  onChange={(e) => setActivityForm({...activityForm, location: e.target.value})}
+                  placeholder="Enter location"
+                  className="rounded-xl border-gray-300 focus:border-green-500 focus:ring-green-500 transition-all"
+                />
+              </div>
+              
+              {/* Participants Section for Edit */}
+              <div className="space-y-4 border-t pt-6">
+                <div className="flex items-center justify-between">
+                  <Label className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+                    <Users className="h-5 w-5 text-blue-500" />
+                    Participants ({participants.length})
+                  </Label>
+                  <Button
+                    type="button"
+                    onClick={addParticipant}
+                    variant="outline"
+                    className="border-green-500 text-green-600 hover:bg-green-50 rounded-lg"
+                  >
+                    <Plus className="h-4 w-4 mr-1" />
+                    Add Participant
+                  </Button>
+                </div>
+                
+                <div className="space-y-3 max-h-60 overflow-y-auto pr-2">
+                  {participants.map((participant, index) => (
+                    <div key={index} className="grid grid-cols-12 gap-3 items-start p-3 bg-gray-50 rounded-lg border border-gray-200">
+                      <div className="col-span-1 flex items-center justify-center pt-2">
+                        <div className="w-6 h-6 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white text-xs font-semibold">
+                          {index + 1}
+                        </div>
+                      </div>
+                      <div className="col-span-5">
+                        <Label htmlFor={`edit-participant-name-${index}`} className="text-xs font-medium text-gray-700">Name *</Label>
+                        <Input
+                          id={`edit-participant-name-${index}`}
+                          value={participant.name}
+                          onChange={(e) => updateParticipant(index, 'name', e.target.value)}
+                          placeholder="Enter participant name"
+                          className="rounded-lg border-gray-300 focus:border-blue-500 focus:ring-blue-500 text-sm"
+                        />
+                      </div>
+                      <div className="col-span-5">
+                        <Label htmlFor={`edit-participant-role-${index}`} className="text-xs font-medium text-gray-700">Role *</Label>
+                        <Input
+                          id={`edit-participant-role-${index}`}
+                          value={participant.role}
+                          onChange={(e) => updateParticipant(index, 'role', e.target.value)}
+                          placeholder="Enter role"
+                          className="rounded-lg border-gray-300 focus:border-blue-500 focus:ring-blue-500 text-sm"
+                        />
+                      </div>
+                      <div className="col-span-1 flex items-center justify-center pt-2">
+                        {participants.length > 1 && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => removeParticipant(index)}
+                            className="h-8 w-8 p-0 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg"
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit-namesOfPersons" className="text-sm font-semibold text-gray-700">Participant Names</Label>
-                <Textarea
-                  id="edit-namesOfPersons"
-                  value={activityForm.namesOfPersons}
-                  onChange={(e) => setActivityForm({...activityForm, namesOfPersons: e.target.value})}
-                  placeholder="Enter names separated by commas"
-                  className="rounded-xl border-gray-300 focus:border-green-500 focus:ring-green-500 transition-all min-h-[80px]"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit-roles" className="text-sm font-semibold text-gray-700">Roles</Label>
-                <Textarea
-                  id="edit-roles"
-                  value={activityForm.roles}
-                  onChange={(e) => setActivityForm({...activityForm, roles: e.target.value})}
-                  placeholder="Enter roles separated by commas"
-                  className="rounded-xl border-gray-300 focus:border-green-500 focus:ring-green-500 transition-all min-h-[80px]"
-                />
-              </div>
             </div>
-            <div className="flex justify-end gap-3">
+            <div className="flex justify-end gap-3 pt-4 border-t">
               <Button 
                 variant="outline" 
-                onClick={() => setIsEditDialogOpen(false)}
+                onClick={() => {
+                  setIsEditDialogOpen(false);
+                  clearParticipants();
+                }}
                 className="rounded-xl border-gray-300 hover:border-gray-400 transition-all"
               >
                 Cancel

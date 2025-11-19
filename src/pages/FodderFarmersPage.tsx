@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { fetchData } from "@/lib/firebase";
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
-import { Download, Users, MapPin, Eye, Calendar, Sprout, Globe, LayoutGrid } from "lucide-react";
+import { Download, Users, MapPin, Eye, Calendar, Sprout, Globe, LayoutGrid, Edit, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 // Types
@@ -58,6 +58,7 @@ interface Pagination {
 
 // Constants
 const PAGE_LIMIT = 15;
+const SEARCH_DEBOUNCE_DELAY = 300; // milliseconds
 
 // Helper functions
 const parseDate = (date: any): Date | null => {
@@ -116,6 +117,7 @@ const FodderFarmersPage = () => {
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [viewingRecord, setViewingRecord] = useState<FodderFarmer | null>(null);
   
+  const searchTimeoutRef = useRef<NodeJS.Timeout>();
   const currentMonth = useMemo(getCurrentMonthDates, []);
 
   const [filters, setFilters] = useState<Filters>({
@@ -208,7 +210,7 @@ const FodderFarmersPage = () => {
     }
   }, [toast]);
 
-  // Filter application
+  // Filter application - memoized to prevent unnecessary re-renders
   const applyFilters = useCallback(() => {
     if (allFodder.length === 0) {
       console.log("No data to filter");
@@ -290,7 +292,7 @@ const FodderFarmersPage = () => {
       totalModels: uniqueModels.size
     });
 
-    // Update pagination
+    // Update pagination - FIXED: Calculate hasPrev based on current page
     const totalPages = Math.ceil(filtered.length / pagination.limit);
     setPagination(prev => ({
       ...prev,
@@ -309,15 +311,34 @@ const FodderFarmersPage = () => {
     applyFilters();
   }, [applyFilters]);
 
-  // Handlers
-  const handleSearch = (value: string) => {
-    setFilters(prev => ({ ...prev, search: value }));
-  };
+  // Optimized search handler with debouncing
+  const handleSearch = useCallback((value: string) => {
+    // Clear previous timeout
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
 
-  const handleFilterChange = (key: keyof Filters, value: string) => {
+    // Set new timeout
+    searchTimeoutRef.current = setTimeout(() => {
+      setFilters(prev => ({ ...prev, search: value }));
+      setPagination(prev => ({ ...prev, page: 1 }));
+    }, SEARCH_DEBOUNCE_DELAY);
+  }, []);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Filter change handler
+  const handleFilterChange = useCallback((key: keyof Filters, value: string) => {
     setFilters(prev => ({ ...prev, [key]: value }));
     setPagination(prev => ({ ...prev, page: 1 }));
-  };
+  }, []);
 
   const handleExport = async () => {
     try {
@@ -413,6 +434,26 @@ const FodderFarmersPage = () => {
     setIsViewDialogOpen(true);
   };
 
+  // Edit and Delete handlers
+  const handleEdit = (record: FodderFarmer) => {
+    // TODO: Implement edit functionality
+    console.log("Edit record:", record);
+    toast({
+      title: "Edit Feature",
+      description: "Edit functionality will be implemented soon",
+    });
+  };
+
+  const handleDelete = (record: FodderFarmer) => {
+    // TODO: Implement delete functionality
+    console.log("Delete record:", record);
+    toast({
+      title: "Delete Feature",
+      description: "Delete functionality will be implemented soon",
+      variant: "destructive",
+    });
+  };
+
   // Memoized values
   const uniqueRegions = useMemo(() => {
     const regions = [...new Set(allFodder.map(f => f.region).filter(Boolean))];
@@ -435,6 +476,11 @@ const FodderFarmersPage = () => {
   const currentPageRecords = useMemo(getCurrentPageRecords, [getCurrentPageRecords]);
 
   const clearAllFilters = () => {
+    // Clear any pending search timeout
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+    
     setFilters({
       search: "",
       startDate: "",
@@ -449,8 +495,8 @@ const FodderFarmersPage = () => {
     setFilters(prev => ({ ...prev, ...currentMonth }));
   };
 
-  // Render components
-  const StatsCard = ({ title, value, icon: Icon, description }: any) => (
+  // Memoized components to prevent re-renders
+  const StatsCard = useCallback(({ title, value, icon: Icon, description }: any) => (
     <Card className="bg-white text-slate-900 shadow-lg border border-gray-200 relative overflow-hidden">
       <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-green-500 to-emerald-600"></div>
       
@@ -471,16 +517,15 @@ const FodderFarmersPage = () => {
         </div>
       </CardContent>
     </Card>
-  );
+  ), []);
 
-  const FilterSection = () => (
+  const FilterSection = useMemo(() => (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
       <div className="space-y-2">
         <Label htmlFor="search" className="font-semibold text-gray-700">Search</Label>
         <Input
           id="search"
           placeholder="Search records..."
-          value={filters.search}
           onChange={(e) => handleSearch(e.target.value)}
           className="border-gray-300 focus:border-green-500 focus:ring-green-500 bg-white"
         />
@@ -553,9 +598,9 @@ const FodderFarmersPage = () => {
         />
       </div>
     </div>
-  );
+  ), [filters, uniqueRegions, uniqueLocations, uniqueModels, handleSearch, handleFilterChange]);
 
-  const TableRow = ({ record }: { record: FodderFarmer }) => {
+  const TableRow = useCallback(({ record }: { record: FodderFarmer }) => {
     const farmerCount = record.farmers?.length || 0;
     
     return (
@@ -591,24 +636,36 @@ const FodderFarmersPage = () => {
             >
               <Eye className="h-4 w-4 text-green-500" />
             </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleEdit(record)}
+              className="h-8 w-8 p-0 hover:bg-blue-50 hover:text-blue-600 border-blue-200"
+            >
+              <Edit className="h-4 w-4 text-blue-500" />
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleDelete(record)}
+              className="h-8 w-8 p-0 hover:bg-red-50 hover:text-red-600 border-red-200"
+            >
+              <Trash2 className="h-4 w-4 text-red-500" />
+            </Button>
           </div>
         </td>
       </tr>
     );
-  };
+  }, [selectedRecords, handleSelectRecord, openViewDialog, handleEdit, handleDelete]);
 
   return (
     <div className="space-y-6">
       {/* Header with Action Buttons */}
       <div className="flex md:flex-row flex-col justify-between items-start sm:items-center gap-4">
         <div>
-          <h2 className="text-2xl font-bold mb-2 bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent">
+          <h2 className="text-xl font-bold mb-2 bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent">
             Fodder Farmers
           </h2>
-          <p className="text-muted-foreground">Manage fodder farmer records</p>
-          <p className="text-sm text-gray-500">
-            Loaded {allFodder.length} records • Showing {filteredFodder.length} after filters
-          </p>
         </div>
 
         <div className="flex flex-wrap gap-2">
@@ -666,7 +723,7 @@ const FodderFarmersPage = () => {
       {/* Filters Section */}
       <Card className="shadow-lg border-0 bg-white">
         <CardContent className="space-y-4 pt-6">
-          <FilterSection />
+          {FilterSection}
         </CardContent>
       </Card>
 
@@ -685,25 +742,25 @@ const FodderFarmersPage = () => {
           ) : (
             <>
               <div className="w-full overflow-x-auto rounded-md">
-                <table className="w-full border-collapse border border-gray-300 text-sm text-left">
+                <table className="w-full border-collapse border border-gray-300 text-sm text-left whitespace-nowrap">
                   <thead className="rounded">
-                    <tr className="bg-green-100">
-                      <th className="py-3 px-4">
+                    <tr className="bg-green-100 p-1 px-3">
+                      <th className="py-1 px-6">
                         <Checkbox
                           checked={selectedRecords.length === currentPageRecords.length && currentPageRecords.length > 0}
                           onCheckedChange={handleSelectAll}
                         />
                       </th>
-                      <th className="py-3 px-4 font-medium text-gray-600">Date</th>
-                      <th className="py-3 px-4 font-medium text-gray-600">Location</th>
-                      <th className="py-3 px-4 font-medium text-gray-600">Region</th>
-                      <th className="py-3 px-4 font-medium text-gray-600">Model</th>
-                      <th className="py-3 px-4 font-medium text-gray-600">Land Size</th>
-                      <th className="py-3 px-4 font-medium text-gray-600">Pasture Acres</th>
-                      <th className="py-3 px-4 font-medium text-gray-600">Total Bales</th>
-                      <th className="py-3 px-4 font-medium text-gray-600">Yield/Harvest</th>
-                      <th className="py-3 px-4 font-medium text-gray-600">Farmers</th>
-                      <th className="py-3 px-4 font-medium text-gray-600">Actions</th>
+                      <th className="py-1 px-6 font-medium text-gray-600">Date</th>
+                      <th className="py-1 px-6 font-medium text-gray-600">Location</th>
+                      <th className="py-1 px-6 font-medium text-gray-600">Region</th>
+                      <th className="py-1 px-6 font-medium text-gray-600">Model</th>
+                      <th className="py-1 px-6 font-medium text-gray-600">Land Size</th>
+                      <th className="py-1 px-6 font-medium text-gray-600">Pasture Acres</th>
+                      <th className="py-1 px-6 font-medium text-gray-600">Total Bales</th>
+                      <th className="py-1 px-6 font-medium text-gray-600">Yield/Harvest</th>
+                      <th className="py-1 px-6 font-medium text-gray-600">Farmers</th>
+                      <th className="py-1 px-6 font-medium text-gray-600">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -717,7 +774,7 @@ const FodderFarmersPage = () => {
               {/* Pagination */}
               <div className="flex items-center justify-between p-4 border-t bg-gray-50">
                 <div className="text-sm text-muted-foreground">
-                  {filteredFodder.length} total records • {currentPageRecords.length} on this page
+                  Page {pagination.page} of {pagination.totalPages} • {filteredFodder.length} total records • {currentPageRecords.length} on this page
                 </div>
                 <div className="flex gap-2">
                   <Button

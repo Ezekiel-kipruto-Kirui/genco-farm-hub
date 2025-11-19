@@ -12,18 +12,13 @@ import DashboardOverview from "./pages/DashboardOverview";
 import LivestockFarmersPage from "./pages/LivestockFarmersPage";
 import LivestockFarmersAnalytics from "./pages/LivestockFarmersAnalytics";
 import FodderFarmersPage from "./pages/FodderFarmersPage";
-
 import InfrastructurePage from "./pages/BoreHole";
 import HayStoragepage from "./pages/HayStoragepage";
-
 import CapacityBuildingPage from "./pages/CapacityBuildingPage";
-
 import LivestockOfftakePage from "./pages/LivestockOfftakePage";
-import LivestockOfftakeAnalytics from "./pages/LivestockOfftakeAnalytics";
+
 import FodderOfftakePage from "./pages/FodderOfftakePage";
-
 import UserManagementPage from "./pages/UserManagementPage";
-
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -36,8 +31,11 @@ const App = () => (
         <Sonner />
         <BrowserRouter>
           <Routes>
-           
-            <Route path="/" element={<Auth />} />
+            {/* Public Routes */}
+            <Route path="/" element={<Navigate to="/auth" replace />} />
+            <Route path="/auth" element={<Auth />} />
+            
+            {/* Protected Dashboard Routes */}
             <Route
               path="/dashboard"
               element={
@@ -46,30 +44,39 @@ const App = () => (
                 </ProtectedRoute>
               }
             >
+              {/* Nested routes under DashboardLayout */}
               <Route index element={<DashboardOverview />} />
-              <Route path="livestock" element={<LivestockFarmersPage />} />
-              <Route path="livestock/analytics" element={<LivestockFarmersAnalytics />} />
+              <Route path="livestock">
+                <Route index element={<LivestockFarmersPage />} />
+                <Route path="analytics" element={<LivestockFarmersAnalytics />} />
+              </Route>
               <Route path="fodder" element={<FodderFarmersPage />} />
               
-              <Route path="BoreHole" element={<InfrastructurePage />} />
-              <Route path="HayStoragepage" element={<HayStoragepage/>}/>
+              {/* Infrastructure Routes */}
+              <Route path="hay-storage" element={<HayStoragepage />} />
+              <Route path="borehole" element={<InfrastructurePage />} />
+              
               <Route path="capacity" element={<CapacityBuildingPage />} />
               
-              <Route path="livestock-offtake" element={<LivestockOfftakePage />} />
-              <Route path="livestock-offtake/analytics" element={<LivestockOfftakeAnalytics />} />
+              {/* Offtake Routes */}
+              <Route path="livestock-offtake">
+                <Route index element={<LivestockOfftakePage />} />
+             
+              </Route>
               <Route path="fodder-offtake" element={<FodderOfftakePage />} />
               
+              {/* Admin Only Routes */}
               <Route 
                 path="users" 
                 element={
-                  <ProtectedRoute allowedRoles={["chief-admin,Admin"]}>
+                  <ProtectedRoute allowedRoles={["chief-admin", "admin"]}>
                     <UserManagementPage />
                   </ProtectedRoute>
                 } 
               />
-             
             </Route>
-            {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+
+            {/* Catch-all route for 404 */}
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
