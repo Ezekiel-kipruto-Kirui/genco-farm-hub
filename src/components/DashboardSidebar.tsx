@@ -10,6 +10,7 @@ import {
   ChevronRight,
   Beef,
   Upload,
+  Activity
 } from "lucide-react";
 
 import { NavLink } from "@/components/NavLink";
@@ -67,6 +68,16 @@ const menuItems = [
     title: "Fodder Offtake",
     icon: Wheat,
     url: "/dashboard/fodder-offtake"
+  },
+  { 
+    title: "Schedule Activity",
+    icon: Activity,
+    url: "/dashboard/activities"
+  },
+  { 
+    title: "On Boarding",
+    icon: Activity,
+    url: "/dashboard/activities"
   },
   { 
     title: "User Management",

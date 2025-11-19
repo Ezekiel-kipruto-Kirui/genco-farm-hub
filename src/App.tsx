@@ -16,6 +16,7 @@ import InfrastructurePage from "./pages/BoreHole";
 import HayStoragepage from "./pages/HayStoragepage";
 import CapacityBuildingPage from "./pages/CapacityBuildingPage";
 import LivestockOfftakePage from "./pages/LivestockOfftakePage";
+import ActivitiesPage from "./pages/ActivitiesPage"
 
 import FodderOfftakePage from "./pages/FodderOfftakePage";
 import UserManagementPage from "./pages/UserManagementPage";
@@ -65,6 +66,10 @@ const App = () => (
               </Route>
               <Route path="fodder-offtake" element={<FodderOfftakePage />} />
               
+               <Route path="activities" element={<ActivitiesPage />} />
+              
+
+
               {/* Admin Only Routes */}
               <Route 
                 path="users" 

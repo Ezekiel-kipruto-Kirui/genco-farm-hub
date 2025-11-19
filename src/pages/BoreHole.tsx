@@ -18,7 +18,7 @@ interface Borehole {
   date: any;
   location?: string;
   region?: string;
-  people?: number;
+  people?: string;
   waterUsed?: number;
 }
 
@@ -177,8 +177,8 @@ const BoreholePage = () => {
           date: dateValue,
           location: item.	BoreholeLocation || 'No location',
           region: item.Region || '',
-          people: Number(item.PeopleUsingBorehole || 0),
-          waterUsed: Number(item.WaterUsed || 0)
+          people: item.PeopleUsingBorehole || 0,
+          waterUsed: item.WaterUsed || 0
         };
 
         console.log(`Processed borehole item ${index}:`, processedItem);
@@ -265,7 +265,7 @@ const BoreholePage = () => {
     setFilteredBoreholes(filtered);
     
     // Update stats
-    const totalPeople = filtered.reduce((sum, record) => sum + (record.people || 0), 0);
+    const totalPeople = filtered.reduce((sum, record) => sum + (parseInt(record.people || 0)), 0);
     const totalWaterUsed = filtered.reduce((sum, record) => sum + (record.waterUsed || 0), 0);
     
     // Count unique regions from filtered data

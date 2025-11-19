@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Download, Users, MapPin, Eye, Calendar, Scale, Phone, CreditCard, Edit, Trash2, Weight } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
-// Types (keep the same)
+// Types
 interface OfftakeData {
   id: string;
   date: any;
@@ -43,6 +43,10 @@ interface Stats {
   totalRegions: number;
   totalAnimals: number;
   totalRevenue: number;
+  averageLiveWeight: number;
+  averageCarcassWeight: number;
+  averageRevenue: number;
+  totalFarmers: number;
 }
 
 interface Pagination {
@@ -63,10 +67,16 @@ interface EditForm {
   location: string;
 }
 
+interface WeightEditForm {
+  liveWeights: number[];
+  carcassWeights: number[];
+  prices: number[];
+}
+
 // Constants
 const PAGE_LIMIT = 15;
 
-// Helper functions (keep the same)
+// Helper functions
 const parseDate = (date: any): Date | null => {
   if (!date) return null;
   
@@ -165,6 +175,7 @@ const LivestockOfftakePage = () => {
   const [selectedRecords, setSelectedRecords] = useState<string[]>([]);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isWeightEditDialogOpen, setIsWeightEditDialogOpen] = useState(false);
   const [viewingRecord, setViewingRecord] = useState<OfftakeData | null>(null);
   const [editingRecord, setEditingRecord] = useState<OfftakeData | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
@@ -173,8 +184,7 @@ const LivestockOfftakePage = () => {
 
   // Use ref for search timeout to debounce search
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-  const [filters, setFilters] = useState<Filters>({
+  const filtersRef = useRef<Filters>({
     search: "",
     startDate: currentMonth.startDate,
     endDate: currentMonth.endDate,
@@ -185,7 +195,11 @@ const LivestockOfftakePage = () => {
   const [stats, setStats] = useState<Stats>({
     totalRegions: 0,
     totalAnimals: 0,
-    totalRevenue: 0
+    totalRevenue: 0,
+    averageLiveWeight: 0,
+    averageCarcassWeight: 0,
+    averageRevenue: 0,
+    totalFarmers: 0
   });
 
   const [pagination, setPagination] = useState<Pagination>({
@@ -206,7 +220,13 @@ const LivestockOfftakePage = () => {
     location: ""
   });
 
-  // Data fetching (keep the same)
+  const [weightEditForm, setWeightEditForm] = useState<WeightEditForm>({
+    liveWeights: [],
+    carcassWeights: [],
+    prices: []
+  });
+
+  // Data fetching - memoized to prevent unnecessary re-fetches
   const fetchAllData = useCallback(async () => {
     try {
       setLoading(true);
@@ -277,93 +297,115 @@ const LivestockOfftakePage = () => {
     }
   }, [toast]);
 
-  // Filter application - UPDATED to fix pagination
-  const applyFilters = useCallback(() => {
-    if (allOfftake.length === 0) {
-      console.log("No livestock offtake data to filter");
-      setFilteredOfftake([]);
-      setStats({
-        totalRegions: 0,
-        totalAnimals: 0,
-        totalRevenue: 0
-      });
-      return;
+  // Filter application - optimized with useMemo
+ 
+const applyFilters = useCallback(() => {
+  if (allOfftake.length === 0) {
+    console.log("No livestock offtake data to filter");
+    setFilteredOfftake([]);
+    setStats({
+      totalRegions: 0,
+      totalAnimals: 0,
+      totalRevenue: 0,
+      averageLiveWeight: 0,
+      averageCarcassWeight: 0,
+      averageRevenue: 0,
+      totalFarmers: 0
+    });
+    return;
+  }
+
+  console.log("Applying filters to", allOfftake.length, "livestock offtake records");
+  
+  let filtered = allOfftake.filter(record => {
+    if (filtersRef.current.region !== "all" && record.region?.toLowerCase() !== filtersRef.current.region.toLowerCase()) {
+      return false;
     }
 
-    console.log("Applying filters to", allOfftake.length, "livestock offtake records");
-    
-    let filtered = allOfftake.filter(record => {
-      if (filters.region !== "all" && record.region?.toLowerCase() !== filters.region.toLowerCase()) {
+    if (filtersRef.current.gender !== "all" && record.gender?.toLowerCase() !== filtersRef.current.gender.toLowerCase()) {
+      return false;
+    }
+
+    if (filtersRef.current.startDate || filtersRef.current.endDate) {
+      const recordDate = parseDate(record.date);
+      if (recordDate) {
+        const recordDateOnly = new Date(recordDate);
+        recordDateOnly.setHours(0, 0, 0, 0);
+
+        const startDate = filtersRef.current.startDate ? new Date(filtersRef.current.startDate) : null;
+        const endDate = filtersRef.current.endDate ? new Date(filtersRef.current.endDate) : null;
+        if (startDate) startDate.setHours(0, 0, 0, 0);
+        if (endDate) endDate.setHours(23, 59, 59, 999);
+
+        if (startDate && recordDateOnly < startDate) return false;
+        if (endDate && recordDateOnly > endDate) return false;
+      } else if (filtersRef.current.startDate || filtersRef.current.endDate) {
         return false;
       }
+    }
 
-      if (filters.gender !== "all" && record.gender?.toLowerCase() !== filters.gender.toLowerCase()) {
-        return false;
-      }
+    if (filtersRef.current.search) {
+      const searchTerm = filtersRef.current.search.toLowerCase();
+      const searchMatch = [
+        record.farmerName, 
+        record.location, 
+        record.region,
+        record.idNumber,
+        record.phoneNumber
+      ].some(field => field?.toLowerCase().includes(searchTerm));
+      if (!searchMatch) return false;
+    }
 
-      if (filters.startDate || filters.endDate) {
-        const recordDate = parseDate(record.date);
-        if (recordDate) {
-          const recordDateOnly = new Date(recordDate);
-          recordDateOnly.setHours(0, 0, 0, 0);
+    return true;
+  });
 
-          const startDate = filters.startDate ? new Date(filters.startDate) : null;
-          const endDate = filters.endDate ? new Date(filters.endDate) : null;
-          if (startDate) startDate.setHours(0, 0, 0, 0);
-          if (endDate) endDate.setHours(23, 59, 59, 999);
+  console.log("Filtered to", filtered.length, "livestock offtake records");
+  setFilteredOfftake(filtered);
+  
+  const totalAnimals = filtered.reduce((sum, record) => sum + (record.noSheepGoats || 0), 0);
+  const totalRevenue = filtered.reduce((sum, record) => sum + (record.totalprice || 0), 0);
+  
+  const uniqueRegions = new Set(filtered.map(f => f.region).filter(Boolean));
+  const totalFarmers = filtered.length;
 
-          if (startDate && recordDateOnly < startDate) return false;
-          if (endDate && recordDateOnly > endDate) return false;
-        } else if (filters.startDate || filters.endDate) {
-          return false;
-        }
-      }
+  // Calculate averages
+  const totalLiveWeight = filtered.reduce((sum, record) => sum + calculateTotal(record.liveWeight), 0);
+  const totalCarcassWeight = filtered.reduce((sum, record) => sum + calculateTotal(record.carcassWeight || 0), 0);
+  
+  const averageLiveWeight = totalAnimals > 0 ? totalLiveWeight / totalAnimals : 0;
+  const averageCarcassWeight = totalAnimals > 0 ? totalCarcassWeight / totalAnimals : 0;
+  
+  // CORRECTED: Average revenue is now divided by total number of animals, not farmers
+  const averageRevenue = totalAnimals > 0 ? totalRevenue / totalAnimals : 0;
 
-      if (filters.search) {
-        const searchTerm = filters.search.toLowerCase();
-        const searchMatch = [
-          record.farmerName, 
-          record.location, 
-          record.region,
-          record.idNumber,
-          record.phoneNumber
-        ].some(field => field?.toLowerCase().includes(searchTerm));
-        if (!searchMatch) return false;
-      }
+  console.log("Regions:", uniqueRegions.size, "Animals:", totalAnimals, "Revenue:", totalRevenue);
+  console.log("Average Live Weight:", averageLiveWeight, "Average Carcass Weight:", averageCarcassWeight, "Average Revenue per Animal:", averageRevenue);
 
-      return true;
-    });
+  setStats({
+    totalRegions: uniqueRegions.size,
+    totalAnimals,
+    totalRevenue,
+    averageLiveWeight,
+    averageCarcassWeight,
+    averageRevenue,
+    totalFarmers
+  });
 
-    console.log("Filtered to", filtered.length, "livestock offtake records");
-    setFilteredOfftake(filtered);
-    
-    const totalAnimals = filtered.reduce((sum, record) => sum + (record.noSheepGoats || 0), 0);
-    const totalRevenue = filtered.reduce((sum, record) => sum + (record.totalprice || 0), 0);
-    
-    const uniqueRegions = new Set(filtered.map(f => f.region).filter(Boolean));
+  // Calculate pagination based on current page
+  const totalPages = Math.ceil(filtered.length / pagination.limit);
+  const currentPage = Math.min(pagination.page, Math.max(1, totalPages));
+  
+  setPagination(prev => ({
+    ...prev,
+    page: currentPage,
+    totalPages,
+    hasNext: currentPage < totalPages,
+    hasPrev: currentPage > 1
+  }));
+}, [allOfftake, pagination.limit, pagination.page]);
 
-    console.log("Regions:", uniqueRegions.size, "Animals:", totalAnimals, "Revenue:", totalRevenue);
 
-    setStats({
-      totalRegions: uniqueRegions.size,
-      totalAnimals,
-      totalRevenue
-    });
-
-    // UPDATED: Calculate pagination based on current page
-    const totalPages = Math.ceil(filtered.length / pagination.limit);
-    const currentPage = Math.min(pagination.page, Math.max(1, totalPages)); // Ensure page is within bounds
-    
-    setPagination(prev => ({
-      ...prev,
-      page: currentPage,
-      totalPages,
-      hasNext: currentPage < totalPages,
-      hasPrev: currentPage > 1
-    }));
-  }, [allOfftake, filters, pagination.limit, pagination.page]); // ADDED pagination.page dependency
-
-  // Effects (keep the same)
+  // Effects - optimized dependencies
   useEffect(() => {
     fetchAllData();
   }, [fetchAllData]);
@@ -372,8 +414,8 @@ const LivestockOfftakePage = () => {
     applyFilters();
   }, [applyFilters]);
 
-  // Debounced search handler
-  const handleSearchChange = (value: string) => {
+  // Debounced search handler - optimized
+  const handleSearchChange = useCallback((value: string) => {
     // Clear existing timeout
     if (searchTimeoutRef.current) {
       clearTimeout(searchTimeoutRef.current);
@@ -381,170 +423,198 @@ const LivestockOfftakePage = () => {
 
     // Set new timeout for debouncing
     searchTimeoutRef.current = setTimeout(() => {
-      setFilters(prev => ({ ...prev, search: value }));
-      setPagination(prev => ({ ...prev, page: 1 })); // Reset to first page on search
-    }, 300); // 300ms delay
-  };
+      filtersRef.current.search = value;
+      setPagination(prev => ({ ...prev, page: 1 }));
+      applyFilters();
+    }, 300);
+  }, [applyFilters]);
 
-  const handleFilterChange = (key: keyof Filters, value: string) => {
-    setFilters(prev => ({ ...prev, [key]: value }));
-    setPagination(prev => ({ ...prev, page: 1 })); // Reset to first page on filter change
-  };
+  // Filter change handler - optimized
+  const handleFilterChange = useCallback((key: keyof Filters, value: string) => {
+    filtersRef.current[key] = value;
+    setPagination(prev => ({ ...prev, page: 1 }));
+    applyFilters();
+  }, [applyFilters]);
 
-  const handleExport = async () => {
-    try {
-      setExportLoading(true);
-      
-      if (filteredOfftake.length === 0) {
-        toast({
-          title: "No Data to Export",
-          description: "There are no records matching your current filters",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      // Create headers
-      const headers = [
-        'Date', 
-        'Farmer Name', 
-        'Gender', 
-        'ID Number', 
-        'Location', 
-        'Phone Number', 
-        'Region', 
-        'Total Animals in Transaction',
-        'Live Weight (kg)',
-        'Carcass Weight (kg)',
-        'Price per Animal (KES)',
-        'Total Transaction Price (KES)',
-      ];
-
-      const csvData = [];
-
-      // Process each record and create rows for each animal
-      filteredOfftake.forEach(record => {
-        const liveWeights = Array.isArray(record.liveWeight) ? record.liveWeight : [record.liveWeight || 0];
-        const carcassWeights = Array.isArray(record.carcassWeight) ? record.carcassWeight : [record.carcassWeight || 0];
-        const prices = Array.isArray(record.pricePerGoatAndSheep) ? record.pricePerGoatAndSheep : [record.pricePerGoatAndSheep || 0];
-
-        // Clean and validate base data
-        const cleanData = {
-          date: formatDate(record.date) || 'N/A',
-          farmerName: (record.farmerName || 'N/A').trim(),
-          gender: (record.gender || 'N/A').trim(),
-          idNumber: (record.idNumber || 'N/A').trim(),
-          location: (record.location || 'N/A').trim(),
-          phoneNumber: (record.phoneNumber || 'N/A').trim(),
-          region: (record.region || 'N/A').trim(),
-          totalAnimals: (record.noSheepGoats || 0).toString(),
-          totalPrice: (record.totalprice || 0).toString()
-        };
-
-        // Determine the maximum number of animals to process for this record
-        const numAnimals = Math.max(liveWeights.length, carcassWeights.length, prices.length, record.noSheepGoats || 1);
-
-        let hasValidAnimals = false;
-
-        // Create a row for each animal
-        for (let i = 0; i < numAnimals; i++) {
-          const liveWeight = liveWeights[i] !== undefined ? Number(liveWeights[i]) : null;
-          const carcassWeight = carcassWeights[i] !== undefined ? Number(carcassWeights[i]) : null;
-          const price = prices[i] !== undefined ? Number(prices[i]) : null;
-
-          // Only include rows where we have at least one valid data point
-          if (liveWeight !== null || carcassWeight !== null || price !== null) {
-            const row = [
-              // Only show constant data for the first animal row
-              i === 0 ? cleanData.date : '',
-              i === 0 ? cleanData.farmerName : '',
-              i === 0 ? cleanData.gender : '',
-              i === 0 ? cleanData.idNumber : '',
-              i === 0 ? cleanData.location : '',
-              i === 0 ? cleanData.phoneNumber : '',
-              i === 0 ? cleanData.region : '',
-              i === 0 ? cleanData.totalAnimals : '',
-              
-              liveWeight !== null && liveWeight > 0 ? liveWeight.toFixed(1) : '',
-              carcassWeight !== null && carcassWeight > 0 ? carcassWeight.toFixed(1) : '',
-              price !== null && price > 0 ? price.toFixed(0) : '',
-              i === 0 ? cleanData.totalPrice : ''
-            ];
-            csvData.push(row);
-            hasValidAnimals = true;
-          }
-        }
-
-        // Add an empty row after each farmer's data for better readability
-        if (hasValidAnimals) {
-          csvData.push(Array(headers.length).fill(''));
-        }
-      });
-
-      // Remove the last empty row if it exists
-      if (csvData.length > 0 && csvData[csvData.length - 1].every(cell => cell === '')) {
-        csvData.pop();
-      }
-
-      // Add grand totals row
-      const totalAnimals = filteredOfftake.reduce((sum, record) => sum + (record.noSheepGoats || 0), 0);
-      const totalRevenue = filteredOfftake.reduce((sum, record) => sum + (record.totalprice || 0), 0);
-      const totalLiveWeight = filteredOfftake.reduce((sum, record) => sum + calculateTotal(record.liveWeight), 0);
-      const totalCarcassWeight = filteredOfftake.reduce((sum, record) => sum + calculateTotal(record.carcassWeight || 0), 0);
-      const totalPricePerAnimals = filteredOfftake.reduce((sum, record) => sum + calculateTotal(record.pricePerGoatAndSheep), 0);
-
-      const grandTotalRow = [
-        'GRAND TOTALS', 
-        '', '', '', '', '', '',
-        totalAnimals.toString(),
-        '',
-        totalLiveWeight.toFixed(1),
-        totalCarcassWeight.toFixed(1),
-        totalPricePerAnimals.toFixed(0),
-        totalRevenue.toString()
-      ];
-
-      const csvContent = [headers, ...csvData, grandTotalRow]
-        .map(row => row.map(field => `"${field}"`).join(','))
-        .join('\n');
-
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      
-      let filename = `livestock-offtake-cleaned`;
-      if (filters.startDate || filters.endDate) {
-        filename += `_${filters.startDate || 'start'}_to_${filters.endDate || 'end'}`;
-      }
-      filename += `_${new Date().toISOString().split('T')[0]}.csv`;
-      
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
-
-      const totalAnimalRows = csvData.filter(row => row[8] && row[8].startsWith('Animal')).length;
+  // Export handler - Updated with better formatting
+ const handleExport = async () => {
+  try {
+    setExportLoading(true);
+    
+    if (filteredOfftake.length === 0) {
       toast({
-        title: "Export Successful",
-        description: `Exported ${totalAnimalRows} animal records from ${filteredOfftake.length} transactions`,
-      });
-
-    } catch (error) {
-      console.error("Error exporting data:", error);
-      toast({
-        title: "Export Failed",
-        description: "Failed to export data. Please try again.",
+        title: "No Data to Export",
+        description: "There are no records matching your current filters",
         variant: "destructive",
       });
-    } finally {
-      setExportLoading(false);
+      return;
     }
-  };
 
-  // UPDATED: Improved page change handler
-  const handlePageChange = (newPage: number) => {
+    // Create headers
+    const headers = [
+      'Date', 
+      'Farmer Name', 
+      'Gender', 
+      'ID Number', 
+      'Location', 
+      'Phone Number', 
+      'Region', 
+      'Total Animals in Transaction',
+      'Live Weight (kg)',
+      'Carcass Weight (kg)',
+      'Price per Animal (KES)',
+      
+    ];
+
+    const csvData = [];
+
+    // Process each record and create rows for each animal
+    filteredOfftake.forEach(record => {
+      const liveWeights = Array.isArray(record.liveWeight) ? record.liveWeight : [record.liveWeight || 0];
+      const carcassWeights = Array.isArray(record.carcassWeight) ? record.carcassWeight : [record.carcassWeight || 0];
+      const prices = Array.isArray(record.pricePerGoatAndSheep) ? record.pricePerGoatAndSheep : [record.pricePerGoatAndSheep || 0];
+
+      // Clean and validate base data
+      const cleanData = {
+        date: formatDate(record.date) || 'N/A',
+        farmerName: (record.farmerName || 'N/A').trim(),
+        gender: (record.gender || 'N/A').trim(),
+        idNumber: (record.idNumber || 'N/A').trim(),
+        location: (record.location || 'N/A').trim(),
+        phoneNumber: (record.phoneNumber || 'N/A').trim(),
+        region: (record.region || 'N/A').trim(),
+        totalAnimals: (record.noSheepGoats || 0).toString(),
+        totalPrice: (record.totalprice || 0).toString()
+      };
+
+      // Determine the maximum number of animals to process for this record
+      const numAnimals = Math.max(liveWeights.length, carcassWeights.length, prices.length, record.noSheepGoats || 1);
+
+      let hasValidAnimals = false;
+
+      // Create a row for each animal
+      for (let i = 0; i < numAnimals; i++) {
+        const liveWeight = liveWeights[i] !== undefined ? Number(liveWeights[i]) : null;
+        const carcassWeight = carcassWeights[i] !== undefined ? Number(carcassWeights[i]) : null;
+        const price = prices[i] !== undefined ? Number(prices[i]) : null;
+
+        // Only include rows where we have at least one valid data point
+        if (liveWeight !== null || carcassWeight !== null || price !== null) {
+          const row = [
+            // Only show constant data for the first animal row
+            i === 0 ? cleanData.date : '',
+            i === 0 ? cleanData.farmerName : '',
+            i === 0 ? cleanData.gender : '',
+            i === 0 ? cleanData.idNumber : '',
+            i === 0 ? cleanData.location : '',
+            i === 0 ? cleanData.phoneNumber : '',
+            i === 0 ? cleanData.region : '',
+            i === 0 ? '' : '',
+            
+            liveWeight !== null && liveWeight > 0 ? liveWeight.toFixed(1) : '',
+            carcassWeight !== null && carcassWeight > 0 ? carcassWeight.toFixed(1) : '',
+            price !== null && price > 0 ? price.toFixed(0) : '',
+            
+          ];
+          csvData.push(row);
+          hasValidAnimals = true;
+        }
+      }
+
+      // Add farmer summary row
+      if (hasValidAnimals) {
+        // Skip one line
+        csvData.push(Array(headers.length).fill(''));
+        
+        // Add total animals and total price for this farmer in the same row
+        const summaryRow = Array(headers.length).fill('');
+        summaryRow[7] = `${cleanData.totalAnimals}`;
+        summaryRow[10] = ` ${cleanData.totalPrice}`;
+        csvData.push(summaryRow);
+        
+        // Skip two lines after each farmer
+        csvData.push(Array(headers.length).fill(''));
+        csvData.push(Array(headers.length).fill(''));
+      }
+    });
+
+    // Remove the last empty rows if they exist
+    while (csvData.length > 0 && csvData[csvData.length - 1].every(cell => cell === '')) {
+      csvData.pop();
+    }
+
+    // Add grand totals row
+    const totalAnimals = filteredOfftake.reduce((sum, record) => sum + (record.noSheepGoats || 0), 0);
+    const totalRevenue = filteredOfftake.reduce((sum, record) => sum + (record.totalprice || 0), 0);
+    const totalLiveWeight = filteredOfftake.reduce((sum, record) => sum + calculateTotal(record.liveWeight), 0);
+    const totalCarcassWeight = filteredOfftake.reduce((sum, record) => sum + calculateTotal(record.carcassWeight || 0), 0);
+    const totalPricePerAnimals = filteredOfftake.reduce((sum, record) => sum + calculateTotal(record.pricePerGoatAndSheep), 0);
+    const averageLiveWeight = totalAnimals > 0 ? totalLiveWeight / totalAnimals : 0;
+    const averageCarcassWeight = totalAnimals > 0 ? totalCarcassWeight / totalAnimals : 0;
+
+    const grandTotalRow1 = [
+      'GRAND TOTALS', 
+      '', '', '', '', '', '',
+      totalAnimals.toString(),
+      '',
+      totalLiveWeight.toFixed(1),
+      totalCarcassWeight.toFixed(1),
+      totalPricePerAnimals.toFixed(0),
+      totalRevenue.toString()
+    ];
+
+    const grandTotalRow2 = [
+      'AVERAGES', 
+      '', '', '', '', '', '',
+      '',
+      '',
+      averageLiveWeight.toFixed(1),
+      averageCarcassWeight.toFixed(1),
+      '',
+      ''
+    ];
+
+    const csvContent = [headers, ...csvData, grandTotalRow1, grandTotalRow2]
+      .map(row => row.map(field => `"${field}"`).join(','))
+      .join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    
+    let filename = `livestock-offtake-cleaned`;
+    if (filtersRef.current.startDate || filtersRef.current.endDate) {
+      filename += `_${filtersRef.current.startDate || 'start'}_to_${filtersRef.current.endDate || 'end'}`;
+    }
+    filename += `_${new Date().toISOString().split('T')[0]}.csv`;
+    
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+
+    const totalAnimalRows = csvData.filter(row => row[8] && row[8].startsWith('Animal')).length;
+    toast({
+      title: "Export Successful",
+      description: `Exported ${totalAnimalRows} animal records from ${filteredOfftake.length} transactions`,
+    });
+
+  } catch (error) {
+    console.error("Error exporting data:", error);
+    toast({
+      title: "Export Failed",
+      description: "Failed to export data. Please try again.",
+      variant: "destructive",
+    });
+  } finally {
+    setExportLoading(false);
+  }
+};
+
+  // Improved page change handler
+  const handlePageChange = useCallback((newPage: number) => {
     setPagination(prev => {
       const totalPages = Math.ceil(filteredOfftake.length / prev.limit);
       const validatedPage = Math.max(1, Math.min(newPage, totalPages));
@@ -556,7 +626,7 @@ const LivestockOfftakePage = () => {
         hasPrev: validatedPage > 1
       };
     });
-  };
+  }, [filteredOfftake.length]);
 
   const getCurrentPageRecords = useCallback(() => {
     const startIndex = (pagination.page - 1) * pagination.limit;
@@ -564,27 +634,27 @@ const LivestockOfftakePage = () => {
     return filteredOfftake.slice(startIndex, endIndex);
   }, [filteredOfftake, pagination.page, pagination.limit]);
 
-  const handleSelectRecord = (recordId: string) => {
+  const handleSelectRecord = useCallback((recordId: string) => {
     setSelectedRecords(prev =>
       prev.includes(recordId)
         ? prev.filter(id => id !== recordId)
         : [...prev, recordId]
     );
-  };
+  }, []);
 
-  const handleSelectAll = () => {
+  const handleSelectAll = useCallback(() => {
     const currentPageIds = getCurrentPageRecords().map(f => f.id);
     setSelectedRecords(prev =>
       prev.length === currentPageIds.length ? [] : currentPageIds
     );
-  };
+  }, [getCurrentPageRecords]);
 
-  const openViewDialog = (record: OfftakeData) => {
+  const openViewDialog = useCallback((record: OfftakeData) => {
     setViewingRecord(record);
     setIsViewDialogOpen(true);
-  };
+  }, []);
 
-  const openEditDialog = (record: OfftakeData) => {
+  const openEditDialog = useCallback((record: OfftakeData) => {
     setEditingRecord(record);
     setEditForm({
       date: formatDateForInput(record.date),
@@ -596,7 +666,34 @@ const LivestockOfftakePage = () => {
       location: record.location || ""
     });
     setIsEditDialogOpen(true);
-  };
+  }, []);
+
+  const openWeightEditDialog = useCallback((record: OfftakeData) => {
+    setEditingRecord(record);
+    
+    const liveWeights = Array.isArray(record.liveWeight) ? record.liveWeight : [record.liveWeight || 0];
+    const carcassWeights = Array.isArray(record.carcassWeight) ? record.carcassWeight : [record.carcassWeight || 0];
+    const prices = Array.isArray(record.pricePerGoatAndSheep) ? record.pricePerGoatAndSheep : [record.pricePerGoatAndSheep || 0];
+    
+    // Ensure we have arrays for all weights and prices
+    const numAnimals = Math.max(liveWeights.length, carcassWeights.length, prices.length, record.noSheepGoats || 1);
+    
+    const paddedLiveWeights = [...liveWeights];
+    const paddedCarcassWeights = [...carcassWeights];
+    const paddedPrices = [...prices];
+    
+    while (paddedLiveWeights.length < numAnimals) paddedLiveWeights.push(0);
+    while (paddedCarcassWeights.length < numAnimals) paddedCarcassWeights.push(0);
+    while (paddedPrices.length < numAnimals) paddedPrices.push(0);
+
+    setWeightEditForm({
+      liveWeights: paddedLiveWeights,
+      carcassWeights: paddedCarcassWeights,
+      prices: paddedPrices
+    });
+    
+    setIsWeightEditDialogOpen(true);
+  }, []);
 
   const handleEditSubmit = async () => {
     if (!editingRecord) return;
@@ -635,6 +732,51 @@ const LivestockOfftakePage = () => {
       toast({
         title: "Error",
         description: "Failed to update record data",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleWeightEditSubmit = async () => {
+    if (!editingRecord) return;
+    
+    try {
+      const recordRef = doc(db, "lofftake", editingRecord.id);
+      
+      // Filter out zero values to maintain data integrity
+      const filteredLiveWeights = weightEditForm.liveWeights.filter(weight => weight > 0);
+      const filteredCarcassWeights = weightEditForm.carcassWeights.filter(weight => weight > 0);
+      const filteredPrices = weightEditForm.prices.filter(price => price > 0);
+      
+      // Calculate new total price based on updated prices
+      const newTotalPrice = filteredPrices.reduce((sum, price) => sum + price, 0);
+      
+      const updateData = {
+        liveWeight: filteredLiveWeights.length > 0 ? filteredLiveWeights : 0,
+        carcassWeight: filteredCarcassWeights.length > 0 ? filteredCarcassWeights : 0,
+        pricePerGoatAndSheep: filteredPrices.length > 0 ? filteredPrices : 0,
+        totalprice: newTotalPrice,
+        LiveWeight: filteredLiveWeights.length > 0 ? filteredLiveWeights : 0,
+        CarcassWeight: filteredCarcassWeights.length > 0 ? filteredCarcassWeights : 0,
+        PricePerGoatAndSheep: filteredPrices.length > 0 ? filteredPrices : 0,
+        TotalPrice: newTotalPrice
+      };
+
+      await updateDoc(recordRef, updateData);
+
+      toast({
+        title: "Success",
+        description: "Weights and prices updated successfully",
+      });
+
+      setIsWeightEditDialogOpen(false);
+      setEditingRecord(null);
+      fetchAllData();
+    } catch (error) {
+      console.error("Error updating weights and prices:", error);
+      toast({
+        title: "Error",
+        description: "Failed to update weights and prices",
         variant: "destructive",
       });
     }
@@ -686,21 +828,27 @@ const LivestockOfftakePage = () => {
 
   const currentPageRecords = useMemo(getCurrentPageRecords, [getCurrentPageRecords]);
 
-  const clearAllFilters = () => {
-    setFilters({
+  const clearAllFilters = useCallback(() => {
+    // Reset filters to show all data including dates
+    filtersRef.current = {
       search: "",
-      startDate: currentMonth.startDate,
-      endDate: currentMonth.endDate,
+      startDate: "", // Empty string to show all dates
+      endDate: "",   // Empty string to show all dates
       region: "all",
       gender: "all"
-    });
-    setPagination(prev => ({ ...prev, page: 1 })); // Reset to first page
-  };
+    };
+    setPagination(prev => ({ ...prev, page: 1 }));
+    applyFilters();
+  }, [applyFilters]);
 
-  const resetToCurrentMonth = () => {
-    setFilters(prev => ({ ...prev, ...currentMonth }));
-    setPagination(prev => ({ ...prev, page: 1 })); // Reset to first page
-  };
+  const resetToCurrentMonth = useCallback(() => {
+    filtersRef.current = {
+      ...filtersRef.current,
+      ...currentMonth
+    };
+    setPagination(prev => ({ ...prev, page: 1 }));
+    applyFilters();
+  }, [currentMonth, applyFilters]);
 
   // Cleanup timeout on unmount
   useEffect(() => {
@@ -711,8 +859,8 @@ const LivestockOfftakePage = () => {
     };
   }, []);
 
-  // Render components
-  const StatsCard = ({ title, value, icon: Icon, description }: any) => (
+  // Memoized components
+  const StatsCard = useMemo(() => ({ title, value, icon: Icon, description, subValue }: any) => (
     <Card className="bg-white text-slate-900 shadow-lg border border-gray-200 relative overflow-hidden">
       <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-blue-500 to-purple-600"></div>
       
@@ -725,6 +873,9 @@ const LivestockOfftakePage = () => {
         </div>
         <div>
           <div className="text-2xl font-bold text-green-500 mb-2">{value}</div>
+          {subValue && (
+            <div className="text-sm font-medium text-slate-600 mb-2">{subValue}</div>
+          )}
           {description && (
             <p className="text-xs mt-2 bg-orange-50 px-2 py-1 rounded-md border border-slate-100">
               {description}
@@ -733,16 +884,16 @@ const LivestockOfftakePage = () => {
         </div>
       </CardContent>
     </Card>
-  );
+  ), []);
 
-  const FilterSection = () => (
+  const FilterSection = useMemo(() => () => (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
       <div className="space-y-2">
         <Label htmlFor="search" className="font-semibold text-gray-700">Search</Label>
         <Input
           id="search"
           placeholder="Search farmers, locations..."
-          defaultValue={filters.search}
+          defaultValue={filtersRef.current.search}
           onChange={(e) => handleSearchChange(e.target.value)}
           className="border-gray-300 focus:border-blue-500 focus:ring-blue-500 bg-white"
         />
@@ -750,7 +901,7 @@ const LivestockOfftakePage = () => {
 
       <div className="space-y-2">
         <Label htmlFor="region" className="font-semibold text-gray-700">Region</Label>
-        <Select value={filters.region} onValueChange={(value) => handleFilterChange("region", value)}>
+        <Select value={filtersRef.current.region} onValueChange={(value) => handleFilterChange("region", value)}>
           <SelectTrigger className="border-gray-300 focus:border-blue-500 focus:ring-blue-500 bg-white">
             <SelectValue placeholder="Select region" />
           </SelectTrigger>
@@ -765,7 +916,7 @@ const LivestockOfftakePage = () => {
 
       <div className="space-y-2">
         <Label htmlFor="gender" className="font-semibold text-gray-700">Gender</Label>
-        <Select value={filters.gender} onValueChange={(value) => handleFilterChange("gender", value)}>
+        <Select value={filtersRef.current.gender} onValueChange={(value) => handleFilterChange("gender", value)}>
           <SelectTrigger className="border-gray-300 focus:border-blue-500 focus:ring-blue-500 bg-white">
             <SelectValue placeholder="Select gender" />
           </SelectTrigger>
@@ -783,7 +934,7 @@ const LivestockOfftakePage = () => {
         <Input
           id="startDate"
           type="date"
-          value={filters.startDate}
+          value={filtersRef.current.startDate}
           onChange={(e) => handleFilterChange("startDate", e.target.value)}
           className="border-gray-300 focus:border-blue-500 focus:ring-blue-500 bg-white"
         />
@@ -794,15 +945,15 @@ const LivestockOfftakePage = () => {
         <Input
           id="endDate"
           type="date"
-          value={filters.endDate}
+          value={filtersRef.current.endDate}
           onChange={(e) => handleFilterChange("endDate", e.target.value)}
           className="border-gray-300 focus:border-blue-500 focus:ring-blue-500 bg-white"
         />
       </div>
     </div>
-  );
+  ), [uniqueRegions, uniqueGenders, handleSearchChange, handleFilterChange]);
 
-  const TableRow = ({ record }: { record: OfftakeData }) => {
+  const TableRow = useMemo(() => ({ record }: { record: OfftakeData }) => {
     const avgLiveWeight = calculateAverage(record.liveWeight);
     const avgPrice = calculateAverage(record.pricePerGoatAndSheep);
     
@@ -822,9 +973,8 @@ const LivestockOfftakePage = () => {
             {record.idNumber || 'N/A'}
           </code>
         </td>
-        <td className="py-1 px-6 text-sm text-gray-600">{record.phoneNumber || 'N/A'}</td>
+        {/* Phone Number and Location columns removed from table display but still in export */}
         <td className="py-1 px-6 text-xs">{record.region || 'N/A'}</td>
-        <td className="py-1 px-6 text-xs">{record.location || 'N/A'}</td>
         <td className="py-1 px-6 text-xs font-bold">{record.noSheepGoats || 0}</td>
         <td className="py-1 px-6 text-xs font-bold text-green-600">{formatCurrency(record.totalprice || 0)}</td>
         <td className="py-1 px-6 text-xs">
@@ -857,7 +1007,7 @@ const LivestockOfftakePage = () => {
         </td>
       </tr>
     );
-  };
+  }, [selectedRecords, handleSelectRecord, openViewDialog, openEditDialog]);
 
   return (
     <div className="space-y-6">
@@ -903,21 +1053,24 @@ const LivestockOfftakePage = () => {
           title="REGIONS" 
           value={stats.totalRegions} 
           icon={MapPin}
-          description="Unique regions covered"
+          description={`${stats.totalFarmers} farmers`}
+          // subValue={`${stats.totalFarmers} farmers`}
         />
 
         <StatsCard 
           title="TOTAL ANIMALS" 
           value={stats.totalAnimals} 
           icon={Scale}
-          description="Sheep and goats offtaken"
+          description={`Avg Live: ${stats.averageLiveWeight.toFixed(1)}kg | Avg Carcass: ${stats.averageCarcassWeight.toFixed(1)}kg`}
+          // subValue={`Avg Live: ${stats.averageLiveWeight.toFixed(1)}kg`}
         />
 
         <StatsCard 
           title="TOTAL REVENUE" 
           value={formatCurrency(stats.totalRevenue)} 
           icon={CreditCard}
-          description="Total sales value"
+          description={`Average per farmer: ${formatCurrency(stats.averageRevenue)}`}
+          // subValue={`Avg: ${formatCurrency(stats.averageRevenue)}`}
         />
       </div>
 
@@ -956,9 +1109,9 @@ const LivestockOfftakePage = () => {
                       <th className="text-left py-2 px-4 font-medium text-gray-600">Farmer Name</th>
                       <th className="text-left py-2 px-4 font-medium text-gray-600">Gender</th>
                       <th className="text-left py-2 px-4 font-medium text-gray-600">ID No</th>
-                      <th className="text-left py-2 px-4 font-medium text-gray-600">Phone</th>
+                      {/* Phone Number column removed from table display */}
                       <th className="text-left py-2 px-4 font-medium text-gray-600">Region</th>
-                      <th className="text-left py-2 px-4 font-medium text-gray-600">Location</th>
+                      {/* Location column removed from table display */}
                       <th className="text-left py-2 px-4 font-medium text-gray-600">No.Animals</th>
                       <th className="text-left py-2 px-4 font-medium text-gray-600">Total Price</th>
                       <th className="text-left py-2 px-4 font-medium text-gray-600">Actions</th>
@@ -972,7 +1125,7 @@ const LivestockOfftakePage = () => {
                 </table>
               </div>
 
-              {/* Pagination - UPDATED with better state management */}
+              {/* Pagination */}
               <div className="flex items-center justify-between p-4 border-t bg-gray-50">
                 <div className="text-sm text-muted-foreground">
                   {filteredOfftake.length} total records • Page {pagination.page} of {pagination.totalPages} • {currentPageRecords.length} on this page
@@ -1020,10 +1173,21 @@ const LivestockOfftakePage = () => {
               
               {/* Weight and Price Details Table */}
               <div className="bg-slate-50 rounded-xl p-4">
-                <h3 className="font-semibold text-slate-800 mb-4 flex items-center gap-2">
-                  <Weight className="h-4 w-4" />
-                  Animal Details Table
-                </h3>
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="font-semibold text-slate-800 flex items-center gap-2">
+                    <Weight className="h-4 w-4" />
+                    Animal Details Table
+                  </h3>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => openWeightEditDialog(viewingRecord)}
+                    className="flex items-center gap-2"
+                  >
+                    <Edit className="h-4 w-4" />
+                    Edit Weights & Prices
+                  </Button>
+                </div>
                 
                 {/* Determine number of animals */}
                 {(() => {
@@ -1273,6 +1437,89 @@ const LivestockOfftakePage = () => {
               Cancel
             </Button>
             <Button onClick={handleEditSubmit} className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white">
+              Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Weight Edit Dialog */}
+      <Dialog open={isWeightEditDialogOpen} onOpenChange={setIsWeightEditDialogOpen}>
+        <DialogContent className="sm:max-w-2xl bg-white rounded-2xl max-h-[90vh] overflow-hidden">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-slate-900">
+              <Weight className="h-5 w-5 text-blue-600" />
+              Edit Weights and Prices
+            </DialogTitle>
+            <DialogDescription>
+              Edit live weights, carcass weights, and prices for each animal
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4 overflow-y-auto max-h-[60vh]">
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse border border-gray-300 text-sm">
+                <thead>
+                  <tr className="bg-blue-100">
+                    <th className="border border-gray-300 py-2 px-3 font-medium text-gray-700 text-left">Animal #</th>
+                    <th className="border border-gray-300 py-2 px-3 font-medium text-gray-700 text-left">Live Weight (kg)</th>
+                    <th className="border border-gray-300 py-2 px-3 font-medium text-gray-700 text-left">Carcass Weight (kg)</th>
+                    <th className="border border-gray-300 py-2 px-3 font-medium text-gray-700 text-left">Price (Ksh)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {weightEditForm.liveWeights.map((_, index) => (
+                    <tr key={index} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                      <td className="border border-gray-300 py-2 px-3 font-medium">Animal {index + 1}</td>
+                      <td className="border border-gray-300 py-2 px-3">
+                        <Input
+                          type="number"
+                          step="0.1"
+                          value={weightEditForm.liveWeights[index] || 0}
+                          onChange={(e) => {
+                            const newLiveWeights = [...weightEditForm.liveWeights];
+                            newLiveWeights[index] = parseFloat(e.target.value) || 0;
+                            setWeightEditForm(prev => ({ ...prev, liveWeights: newLiveWeights }));
+                          }}
+                          className="w-24"
+                        />
+                      </td>
+                      <td className="border border-gray-300 py-2 px-3">
+                        <Input
+                          type="number"
+                          step="0.1"
+                          value={weightEditForm.carcassWeights[index] || 0}
+                          onChange={(e) => {
+                            const newCarcassWeights = [...weightEditForm.carcassWeights];
+                            newCarcassWeights[index] = parseFloat(e.target.value) || 0;
+                            setWeightEditForm(prev => ({ ...prev, carcassWeights: newCarcassWeights }));
+                          }}
+                          className="w-24"
+                        />
+                      </td>
+                      <td className="border border-gray-300 py-2 px-3">
+                        <Input
+                          type="number"
+                          step="1"
+                          value={weightEditForm.prices[index] || 0}
+                          onChange={(e) => {
+                            const newPrices = [...weightEditForm.prices];
+                            newPrices[index] = parseFloat(e.target.value) || 0;
+                            setWeightEditForm(prev => ({ ...prev, prices: newPrices }));
+                          }}
+                          className="w-32"
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsWeightEditDialogOpen(false)} className="border-slate-300">
+              Cancel
+            </Button>
+            <Button onClick={handleWeightEditSubmit} className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white">
               Save Changes
             </Button>
           </DialogFooter>

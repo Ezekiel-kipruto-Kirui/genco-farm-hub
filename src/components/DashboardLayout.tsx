@@ -1,42 +1,68 @@
 import { Outlet } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
-import { LogOut } from "lucide-react";
+import { LogOut, Bell } from "lucide-react";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { DashboardSidebar } from "./DashboardSidebar";
 import { fetchData } from "@/lib/firebase";
 import { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
+import { collection, getDocs } from "firebase/firestore";
+import { db } from "@/lib/firebase";
+
 interface AppUser {
-  
   email: string;
-  name?: string; // optional, prevents TS errors
+  name?: string;
 }
+
+interface Activity {
+  id: string;
+  status: 'pending' | 'completed' | 'cancelled';
+}
+
 const DashboardLayout = () => {
   const { user, userRole, signOutUser } = useAuth();
   const [username, setUsername] = useState("");
+  const [pendingActivitiesCount, setPendingActivitiesCount] = useState(0);
 
- useEffect(() => {
-  const getUser = async () => {
-    if (!user?.email) return;
-    
-    try {
-      const data = await fetchData();
-      const users: AppUser[] = data?.users || [];
-
-      // Find user by email
-      const userData = users.find((u) => u.email === user.email);
-
-      // Set username safely
-      setUsername(userData?.name || user.email);
+  useEffect(() => {
+    const getUser = async () => {
+      if (!user?.email) return;
       
+      try {
+        const data = await fetchData();
+        const users: AppUser[] = data?.users || [];
+
+        // Find user by email
+        const userData = users.find((u) => u.email === user.email);
+
+        // Set username safely
+        setUsername(userData?.name || user.email);
+        
+      } catch (error) {
+        console.error("Error fetching user:", error);
+        setUsername(user.email || "User");
+      }
+    };
+
+    getUser();
+    fetchPendingActivitiesCount();
+  }, [user?.email]);
+
+  const fetchPendingActivitiesCount = async () => {
+    try {
+      const activitiesSnapshot = await getDocs(collection(db, "Recent Activities"));
+      const activities = activitiesSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Activity[];
+
+      const pendingCount = activities.filter(activity => activity.status === 'pending').length;
+      setPendingActivitiesCount(pendingCount);
     } catch (error) {
-      console.error("Error fetching user:", error);
-      setUsername(user.email || "User");
+      console.error("Error fetching pending activities:", error);
     }
   };
-
-  getUser();
-}, [user?.email]);
 
   return (
     <SidebarProvider>
@@ -56,6 +82,18 @@ const DashboardLayout = () => {
               </div>
 
               <div className="flex items-center gap-2 sm:gap-3">
+                {/* Activities Notification */}
+                <Link to="/dashboard/activities">
+                  <Button variant="ghost" size="icon" className="relative">
+                    <Bell className="h-4 w-4" />
+                    {pendingActivitiesCount > 0 && (
+                      <span className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-4 h-4 text-xs flex items-center justify-center">
+                        {pendingActivitiesCount}
+                      </span>
+                    )}
+                  </Button>
+                </Link>
+
                 <span className="text-xs sm:text-sm px-2 sm:px-3 py-1 rounded-full bg-primary/10 text-primary font-medium whitespace-nowrap flex-shrink-0">
                   {userRole === "chief-admin" ? "Chief Admin" : "Admin"}
                 </span>

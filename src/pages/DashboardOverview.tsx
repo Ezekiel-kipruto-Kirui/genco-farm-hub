@@ -1,12 +1,11 @@
 import { useState, useEffect } from "react";
-import { collection, getDocs, addDoc, query, orderBy, limit, deleteDoc, doc, updateDoc } from "firebase/firestore";
+import { collection, getDocs, addDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { 
   Users, 
@@ -14,21 +13,17 @@ import {
   Beef, 
   MapPin, 
   Plus, 
-  Calendar, 
+  Calendar,
   Activity,
   Eye,
-  Edit,
-  Trash2,
-  X,
-  TrendingUp,
-  Map,
-  BarChart3,
-  Table,
-  DollarSign,
-  Target
+  Bell,
+  ArrowRight,
+  Trash2
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Link } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface StatCardProps {
   title: string;
@@ -68,6 +63,11 @@ const StatCard = ({ title, icon, maleCount, femaleCount, total, gradient }: Stat
   </div>
 );
 
+interface Participant {
+  name: string;
+  role: string;
+}
+
 interface Activity {
   id: string;
   activityName: string;
@@ -75,10 +75,10 @@ interface Activity {
   numberOfPersons: number;
   county: string;
   location: string;
-  namesOfPersons: string;
-  roles: string;
+  participants: Participant[];
   subcounty: string;
   createdAt: any;
+  status: 'pending' | 'in-progress' | 'completed' | 'cancelled';
 }
 
 interface RegionStats {
@@ -97,6 +97,18 @@ const ActivityTable = ({ activities }: { activities: Activity[] }) => {
     });
   };
 
+  const getStatusBadge = (status: string) => {
+    const statusConfig = {
+      'pending': { color: 'bg-yellow-100 text-yellow-800', label: 'Pending' },
+      'in-progress': { color: 'bg-blue-100 text-blue-800', label: 'In Progress' },
+      'completed': { color: 'bg-green-100 text-green-800', label: 'Completed' },
+      'cancelled': { color: 'bg-red-100 text-red-800', label: 'Cancelled' }
+    };
+    
+    const config = statusConfig[status as keyof typeof statusConfig] || statusConfig.pending;
+    return <Badge className={`${config.color} border-0 text-xs`}>{config.label}</Badge>;
+  };
+
   return (
     <div className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-xl overflow-hidden">
       <div className="overflow-x-auto">
@@ -105,9 +117,9 @@ const ActivityTable = ({ activities }: { activities: Activity[] }) => {
             <tr className="bg-gradient-to-r from-slate-50 to-slate-100/80 shadow-sm">
               <th className="p-4 text-left font-semibold text-slate-700 text-sm">Activity Name</th>
               <th className="p-4 text-left font-semibold text-slate-700 text-sm">Date</th>
+              <th className="p-4 text-left font-semibold text-slate-700 text-sm">Status</th>
               <th className="p-4 text-left font-semibold text-slate-700 text-sm">Location</th>
               <th className="p-4 text-left font-semibold text-slate-700 text-sm">Participants</th>
-              <th className="p-4 text-left font-semibold text-slate-700 text-sm">County</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -130,6 +142,9 @@ const ActivityTable = ({ activities }: { activities: Activity[] }) => {
                   </Badge>
                 </td>
                 <td className="p-4">
+                  {getStatusBadge(activity.status)}
+                </td>
+                <td className="p-4">
                   <div className="flex items-center gap-2">
                     <MapPin className="h-4 w-4 text-slate-500" />
                     <span className="text-slate-700">{activity.location}</span>
@@ -140,9 +155,6 @@ const ActivityTable = ({ activities }: { activities: Activity[] }) => {
                     <Users className="h-4 w-4 text-slate-500" />
                     <span className="font-semibold text-slate-900">{activity.numberOfPersons}</span>
                   </div>
-                </td>
-                <td className="p-4">
-                  <span className="text-slate-700">{activity.county}</span>
                 </td>
               </tr>
             ))}
@@ -157,21 +169,23 @@ const DashboardOverview = () => {
   const [loading, setLoading] = useState(true);
   const [activitiesLoading, setActivitiesLoading] = useState(true);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
-  const [isViewAllDialogOpen, setIsViewAllDialogOpen] = useState(false);
-  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
-  const [allActivities, setAllActivities] = useState<Activity[]>([]);
-  const [editingActivity, setEditingActivity] = useState<Activity | null>(null);
+  const [pendingActivitiesCount, setPendingActivitiesCount] = useState(0);
+  const [recentActivities, setRecentActivities] = useState<Activity[]>([]);
+  const [participantForm, setParticipantForm] = useState({
+    name: "",
+    role: ""
+  });
+  const [participants, setParticipants] = useState<Participant[]>([]);
   const [activityForm, setActivityForm] = useState({
     activityName: "",
     date: "",
     numberOfPersons: "",
-    namesOfPersons: "",
-    roles: "",
     county: "",
     subcounty: "",
     location: "",
   });
   const { toast } = useToast();
+  const { user } = useAuth();
   const [stats, setStats] = useState({
     totalFarmers: 0,
     maleFarmers: 0,
@@ -184,7 +198,6 @@ const DashboardOverview = () => {
     femaleGoats: 0,
     regionsVisited: 0,
   });
-  const [recentActivities, setRecentActivities] = useState<Activity[]>([]);
   const [regionStats, setRegionStats] = useState<RegionStats[]>([]);
 
   useEffect(() => {
@@ -283,17 +296,22 @@ const DashboardOverview = () => {
 
   const fetchRecentActivities = async () => {
     try {
-      const activitiesQuery = query(
-        collection(db, "Recent Activities"),
-        orderBy("createdAt", "desc"),
-        limit(5)
-      );
-      const activitiesSnapshot = await getDocs(activitiesQuery);
+      const activitiesSnapshot = await getDocs(collection(db, "Recent Activities"));
       const activities = activitiesSnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       })) as Activity[];
-      setRecentActivities(activities);
+
+      // Sort by date and get latest 3
+      const sortedActivities = activities
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+        .slice(0, 3);
+
+      setRecentActivities(sortedActivities);
+
+      // Count pending activities for notification
+      const pendingCount = activities.filter(activity => activity.status === 'pending').length;
+      setPendingActivitiesCount(pendingCount);
     } catch (error) {
       console.error("Error fetching activities:", error);
       toast({
@@ -306,133 +324,61 @@ const DashboardOverview = () => {
     }
   };
 
-  const fetchAllActivities = async () => {
-    try {
-      const activitiesQuery = query(
-        collection(db, "Recent Activities"),
-        orderBy("createdAt", "desc")
-      );
-      const activitiesSnapshot = await getDocs(activitiesQuery);
-      const activities = activitiesSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Activity[];
-      setAllActivities(activities);
-      setIsViewAllDialogOpen(true);
-    } catch (error) {
-      console.error("Error fetching all activities:", error);
-      toast({
-        title: "Error",
-        description: "Failed to load activities",
-        variant: "destructive",
-      });
+  const handleAddParticipant = () => {
+    if (participantForm.name.trim() && participantForm.role.trim()) {
+      setParticipants([...participants, { ...participantForm }]);
+      setParticipantForm({ name: "", role: "" });
     }
   };
 
+  const removeParticipant = (index: number) => {
+    const updatedParticipants = participants.filter((_, i) => i !== index);
+    setParticipants(updatedParticipants);
+  };
+
   const handleAddActivity = async () => {
+    if (participants.length === 0) {
+      toast({
+        title: "Error",
+        description: "Please add at least one participant",
+        variant: "destructive",
+      });
+      return;
+    }
+
     try {
       await addDoc(collection(db, "Recent Activities"), {
         ...activityForm,
-        numberOfPersons: parseInt(activityForm.numberOfPersons),
+        numberOfPersons: participants.length,
+        participants: participants,
+        status: 'pending', // Default status
+        createdBy: user?.email,
         createdAt: new Date(),
       });
       toast({
         title: "Success",
-        description: "Activity added successfully.",
+        description: "Activity scheduled successfully.",
         className: "bg-white text-slate-900 border border-slate-200"
       });
       setActivityForm({
         activityName: "",
         date: "",
         numberOfPersons: "",
-        namesOfPersons: "",
-        roles: "",
         county: "",
         subcounty: "",
         location: "",
       });
+      setParticipants([]);
       setIsAddDialogOpen(false);
       fetchRecentActivities();
     } catch (error) {
       console.error("Error adding activity:", error);
       toast({
         title: "Error",
-        description: "Failed to add activity. Please try again.",
+        description: "Failed to schedule activity. Please try again.",
         variant: "destructive",
       });
     }
-  };
-
-  const handleEditActivity = async () => {
-    if (!editingActivity) return;
-
-    try {
-      await updateDoc(doc(db, "Recent Activities", editingActivity.id), {
-        ...activityForm,
-        numberOfPersons: parseInt(activityForm.numberOfPersons),
-      });
-      toast({
-        title: "Success",
-        description: "Activity updated successfully.",
-        className: "bg-white text-slate-900 border border-slate-200"
-      });
-      setEditingActivity(null);
-      setIsEditDialogOpen(false);
-      setActivityForm({
-        activityName: "",
-        date: "",
-        numberOfPersons: "",
-        namesOfPersons: "",
-        roles: "",
-        county: "",
-        subcounty: "",
-        location: "",
-      });
-      fetchRecentActivities();
-      fetchAllActivities();
-    } catch (error) {
-      console.error("Error updating activity:", error);
-      toast({
-        title: "Error",
-        description: "Failed to update activity. Please try again.",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handleDeleteActivity = async (activityId: string) => {
-    try {
-      await deleteDoc(doc(db, "Recent Activities", activityId));
-      toast({
-        title: "Success",
-        description: "Activity deleted successfully.",
-        className: "bg-white text-slate-900 border border-slate-200"
-      });
-      fetchRecentActivities();
-      fetchAllActivities();
-    } catch (error) {
-      console.error("Error deleting activity:", error);
-      toast({
-        title: "Error",
-        description: "Failed to delete activity. Please try again.",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const openEditDialog = (activity: Activity) => {
-    setEditingActivity(activity);
-    setActivityForm({
-      activityName: activity.activityName,
-      date: activity.date,
-      numberOfPersons: activity.numberOfPersons.toString(),
-      namesOfPersons: activity.namesOfPersons,
-      roles: activity.roles,
-      county: activity.county,
-      subcounty: activity.subcounty,
-      location: activity.location,
-    });
-    setIsEditDialogOpen(true);
   };
 
   const LoadingSkeleton = () => (
@@ -467,7 +413,24 @@ const DashboardOverview = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100/80 p-6">
       <div className="max-w-7xl mx-auto space-y-8">
-        
+        {/* Header with Notification Bell */}
+        <div className="flex justify-between items-center">
+          <div>
+            <h1 className="text-3xl font-bold text-slate-900">Dashboard Overview</h1>
+            <p className="text-slate-600 mt-2">Welcome back! Here's what's happening today.</p>
+          </div>
+          <Link to="/activities">
+            <Button variant="outline" className="relative">
+              <Bell className="h-4 w-4 mr-2" />
+              Activities
+              {pendingActivitiesCount > 0 && (
+                <span className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-5 h-5 text-xs flex items-center justify-center">
+                  {pendingActivitiesCount}
+                </span>
+              )}
+            </Button>
+          </Link>
+        </div>
 
         {loading ? (
           <LoadingSkeleton />
@@ -506,7 +469,7 @@ const DashboardOverview = () => {
                   <div className="flex items-center">
                     <div className="flex-shrink-0">
                       <div className="w-14 h-14 bg-gradient-to-br from-purple-100 to-purple-50 rounded-xl flex items-center justify-center shadow-lg">
-                        <Map className="h-7 w-7 text-purple-600" />
+                        <MapPin className="h-7 w-7 text-purple-600" />
                       </div>
                     </div>
                     <div className="ml-5 flex-1">
@@ -527,7 +490,6 @@ const DashboardOverview = () => {
                                   {region.farmerCount}
                                 </Badge>
                               </div>
-                              
                             </div>
                           ))}
                         </div>
@@ -548,18 +510,25 @@ const DashboardOverview = () => {
             <div className="space-y-6">
               <div className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-xl overflow-hidden">
                 <div className="px-6 py-4 bg-gradient-to-r from-slate-50 to-slate-100/80 shadow-sm">
-                  <div className="flex items-center">
-                    <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-500 rounded-lg flex items-center justify-center shadow-lg mr-3">
-                      <Activity className="w-4 h-4 text-white" />
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center">
+                      <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-500 rounded-lg flex items-center justify-center shadow-lg mr-3">
+                        <Activity className="w-4 h-4 text-white" />
+                      </div>
+                      <h3 className="text-lg font-semibold text-slate-900">Recent Activities</h3>
                     </div>
-                    <h3 className="text-lg font-semibold text-slate-900">Recent Activities</h3>
+                    <Link to="/dashboard/activities">
+                      <Button variant="ghost" size="sm" className="text-slate-600 hover:text-slate-900">
+                        View All <ArrowRight className="h-4 w-4 ml-1" />
+                      </Button>
+                    </Link>
                   </div>
                 </div>
 
                 <div className="p-6">
                   {activitiesLoading ? (
                     <div className="space-y-3">
-                      {[...Array(5)].map((_, i) => (
+                      {[...Array(3)].map((_, i) => (
                         <Skeleton key={i} className="h-16 w-full rounded-xl" />
                       ))}
                     </div>
@@ -569,26 +538,27 @@ const DashboardOverview = () => {
                       
                       {/* Action Buttons at Bottom */}
                       <div className="flex justify-between items-center pt-6 mt-6 border-t border-slate-200">
-                        <Button 
-                          onClick={fetchAllActivities}
-                          variant="outline"
-                          className="border-slate-300 text-slate-700 hover:bg-slate-50 font-medium px-4 py-2 rounded-xl transition-all duration-200 shadow-sm"
-                        >
-                          <Eye className="h-4 w-4 mr-2" />
-                          View All Activities
-                        </Button>
+                        <Link to="/dashboard/activities">
+                          <Button 
+                            variant="outline"
+                            className="border-slate-300 text-slate-700 hover:bg-slate-50 font-medium px-4 py-2 rounded-xl transition-all duration-200 shadow-sm"
+                          >
+                            <Eye className="h-4 w-4 mr-2" />
+                            View All Activities
+                          </Button>
+                        </Link>
                         
                         <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
                           <DialogTrigger asChild>
                             <Button className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white font-semibold px-4 py-2 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200">
                               <Plus className="h-4 w-4 mr-2" />
-                              Add New Activity
+                              Schedule Activity
                             </Button>
                           </DialogTrigger>
-                          <DialogContent className="sm:max-w-[600px] bg-white rounded-2xl border-0 shadow-2xl">
+                          <DialogContent className="sm:max-w-[700px] bg-white rounded-2xl border-0 shadow-2xl max-h-[90vh] overflow-y-auto">
                             <DialogHeader>
                               <DialogTitle className="text-xl font-semibold text-slate-900">
-                                Create New Activity
+                                Schedule New Activity
                               </DialogTitle>
                             </DialogHeader>
                             <div className="grid gap-6 py-4">
@@ -616,17 +586,6 @@ const DashboardOverview = () => {
                               </div>
                               <div className="grid grid-cols-2 gap-4">
                                 <div className="space-y-2">
-                                  <Label htmlFor="numberOfPersons" className="text-sm font-medium text-slate-700">Participants</Label>
-                                  <Input
-                                    id="numberOfPersons"
-                                    type="number"
-                                    value={activityForm.numberOfPersons}
-                                    onChange={(e) => setActivityForm({...activityForm, numberOfPersons: e.target.value})}
-                                    placeholder="Number of participants"
-                                    className="rounded-xl border-slate-300 focus:border-blue-500 focus:ring-blue-500 transition-all bg-white"
-                                  />
-                                </div>
-                                <div className="space-y-2">
                                   <Label htmlFor="county" className="text-sm font-medium text-slate-700">County</Label>
                                   <Input
                                     id="county"
@@ -636,8 +595,6 @@ const DashboardOverview = () => {
                                     className="rounded-xl border-slate-300 focus:border-blue-500 focus:ring-blue-500 transition-all bg-white"
                                   />
                                 </div>
-                              </div>
-                              <div className="grid grid-cols-2 gap-4">
                                 <div className="space-y-2">
                                   <Label htmlFor="subcounty" className="text-sm font-medium text-slate-700">Subcounty</Label>
                                   <Input
@@ -648,52 +605,93 @@ const DashboardOverview = () => {
                                     className="rounded-xl border-slate-300 focus:border-blue-500 focus:ring-blue-500 transition-all bg-white"
                                   />
                                 </div>
-                                <div className="space-y-2">
-                                  <Label htmlFor="location" className="text-sm font-medium text-slate-700">Location</Label>
-                                  <Input
-                                    id="location"
-                                    value={activityForm.location}
-                                    onChange={(e) => setActivityForm({...activityForm, location: e.target.value})}
-                                    placeholder="Enter location"
-                                    className="rounded-xl border-slate-300 focus:border-blue-500 focus:ring-blue-500 transition-all bg-white"
-                                  />
+                              </div>
+                              <div className="space-y-2">
+                                <Label htmlFor="location" className="text-sm font-medium text-slate-700">Location</Label>
+                                <Input
+                                  id="location"
+                                  value={activityForm.location}
+                                  onChange={(e) => setActivityForm({...activityForm, location: e.target.value})}
+                                  placeholder="Enter location"
+                                  className="rounded-xl border-slate-300 focus:border-blue-500 focus:ring-blue-500 transition-all bg-white"
+                                />
+                              </div>
+
+                              {/* Participants Section */}
+                              <div className="space-y-4 border-t pt-4">
+                                <div className="flex items-center justify-between">
+                                  <Label className="text-sm font-medium text-slate-700">Participants ({participants.length})</Label>
+                                  <span className="text-xs text-slate-500">Add participants with their roles</span>
                                 </div>
-                              </div>
-                              <div className="space-y-2">
-                                <Label htmlFor="namesOfPersons" className="text-sm font-medium text-slate-700">Participant Names</Label>
-                                <Textarea
-                                  id="namesOfPersons"
-                                  value={activityForm.namesOfPersons}
-                                  onChange={(e) => setActivityForm({...activityForm, namesOfPersons: e.target.value})}
-                                  placeholder="Enter names separated by commas"
-                                  className="rounded-xl border-slate-300 focus:border-blue-500 focus:ring-blue-500 transition-all bg-white min-h-[80px]"
-                                />
-                              </div>
-                              <div className="space-y-2">
-                                <Label htmlFor="roles" className="text-sm font-medium text-slate-700">Roles</Label>
-                                <Textarea
-                                  id="roles"
-                                  value={activityForm.roles}
-                                  onChange={(e) => setActivityForm({...activityForm, roles: e.target.value})}
-                                  placeholder="Enter roles separated by commas"
-                                  className="rounded-xl border-slate-300 focus:border-blue-500 focus:ring-blue-500 transition-all bg-white min-h-[80px]"
-                                />
+                                
+                                {/* Add Participant Form */}
+                                <div className="grid grid-cols-2 gap-3">
+                                  <Input
+                                    placeholder="Participant Name"
+                                    value={participantForm.name}
+                                    onChange={(e) => setParticipantForm({...participantForm, name: e.target.value})}
+                                    className="rounded-xl border-slate-300 focus:border-blue-500 focus:ring-blue-500"
+                                  />
+                                  <div className="flex gap-2">
+                                    <Input
+                                      placeholder="Role"
+                                      value={participantForm.role}
+                                      onChange={(e) => setParticipantForm({...participantForm, role: e.target.value})}
+                                      className="rounded-xl border-slate-300 focus:border-blue-500 focus:ring-blue-500"
+                                    />
+                                    <Button 
+                                      type="button" 
+                                      onClick={handleAddParticipant}
+                                      className="bg-blue-500 hover:bg-blue-600 text-white rounded-xl"
+                                      disabled={!participantForm.name.trim() || !participantForm.role.trim()}
+                                    >
+                                      <Plus className="h-4 w-4" />
+                                    </Button>
+                                  </div>
+                                </div>
+
+                                {/* Participants List */}
+                                {participants.length > 0 && (
+                                  <div className="space-y-2 max-h-40 overflow-y-auto">
+                                    {participants.map((participant, index) => (
+                                      <div key={index} className="flex items-center justify-between bg-slate-50 rounded-lg p-3">
+                                        <div className="flex-1">
+                                          <p className="font-medium text-slate-900">{participant.name}</p>
+                                          <p className="text-sm text-slate-600">{participant.role}</p>
+                                        </div>
+                                        <Button
+                                          type="button"
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() => removeParticipant(index)}
+                                          className="text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg"
+                                        >
+                                          <Trash2 className="h-4 w-4" />
+                                        </Button>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
                               </div>
                             </div>
-                            <div className="flex justify-end gap-3">
+                            <div className="flex justify-end gap-3 pt-4">
                               <Button 
                                 variant="outline" 
-                                onClick={() => setIsAddDialogOpen(false)}
+                                onClick={() => {
+                                  setIsAddDialogOpen(false);
+                                  setParticipants([]);
+                                }}
                                 className="rounded-xl border-slate-300 hover:border-slate-400 transition-all text-slate-700"
                               >
                                 Cancel
                               </Button>
                               <Button 
                                 onClick={handleAddActivity}
-                                className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 rounded-xl text-white font-semibold shadow-lg hover:shadow-xl transition-all"
+                                disabled={participants.length === 0}
+                                className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 rounded-xl text-white font-semibold shadow-lg hover:shadow-xl transition-all disabled:opacity-50"
                               >
                                 <Calendar className="h-4 w-4 mr-2" />
-                                Create Activity
+                                Schedule Activity
                               </Button>
                             </div>
                           </DialogContent>
@@ -703,134 +701,22 @@ const DashboardOverview = () => {
                   ) : (
                     <div className="text-center p-8 border-2 border-dashed border-slate-300 rounded-2xl bg-slate-50/50">
                       <div className="w-16 h-16 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg">
-                        <Table className="h-8 w-8 text-white" />
+                        <Activity className="h-8 w-8 text-white" />
                       </div>
                       <h4 className="text-xl font-bold text-slate-800 mb-2">
                         No activities yet
                       </h4>
                       <p className="text-slate-600 mb-4">
-                        Start tracking your field activities and events to see them displayed here.
+                        Start scheduling your field activities and events to see them displayed here.
                       </p>
                       <div className="flex justify-center">
                         <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
                           <DialogTrigger asChild>
                             <Button className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white font-semibold px-4 py-2 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200">
                               <Plus className="h-4 w-4 mr-2" />
-                              Add Your First Activity
+                              Schedule Your First Activity
                             </Button>
                           </DialogTrigger>
-                          <DialogContent className="sm:max-w-[600px] bg-white rounded-2xl border-0 shadow-2xl">
-                            <DialogHeader>
-                              <DialogTitle className="text-xl font-semibold text-slate-900">
-                                Create New Activity
-                              </DialogTitle>
-                            </DialogHeader>
-                            <div className="grid gap-6 py-4">
-                              <div className="grid grid-cols-2 gap-4">
-                                <div className="space-y-2">
-                                  <Label htmlFor="activityName" className="text-sm font-medium text-slate-700">Activity Name</Label>
-                                  <Input
-                                    id="activityName"
-                                    value={activityForm.activityName}
-                                    onChange={(e) => setActivityForm({...activityForm, activityName: e.target.value})}
-                                    placeholder="Enter activity name"
-                                    className="rounded-xl border-slate-300 focus:border-blue-500 focus:ring-blue-500 transition-all bg-white"
-                                  />
-                                </div>
-                                <div className="space-y-2">
-                                  <Label htmlFor="date" className="text-sm font-medium text-slate-700">Date</Label>
-                                  <Input
-                                    id="date"
-                                    type="date"
-                                    value={activityForm.date}
-                                    onChange={(e) => setActivityForm({...activityForm, date: e.target.value})}
-                                    className="rounded-xl border-slate-300 focus:border-blue-500 focus:ring-blue-500 transition-all bg-white"
-                                  />
-                                </div>
-                              </div>
-                              <div className="grid grid-cols-2 gap-4">
-                                <div className="space-y-2">
-                                  <Label htmlFor="numberOfPersons" className="text-sm font-medium text-slate-700">Participants</Label>
-                                  <Input
-                                    id="numberOfPersons"
-                                    type="number"
-                                    value={activityForm.numberOfPersons}
-                                    onChange={(e) => setActivityForm({...activityForm, numberOfPersons: e.target.value})}
-                                    placeholder="Number of participants"
-                                    className="rounded-xl border-slate-300 focus:border-blue-500 focus:ring-blue-500 transition-all bg-white"
-                                  />
-                                </div>
-                                <div className="space-y-2">
-                                  <Label htmlFor="county" className="text-sm font-medium text-slate-700">County</Label>
-                                  <Input
-                                    id="county"
-                                    value={activityForm.county}
-                                    onChange={(e) => setActivityForm({...activityForm, county: e.target.value})}
-                                    placeholder="Enter county"
-                                    className="rounded-xl border-slate-300 focus:border-blue-500 focus:ring-blue-500 transition-all bg-white"
-                                  />
-                                </div>
-                              </div>
-                              <div className="grid grid-cols-2 gap-4">
-                                <div className="space-y-2">
-                                  <Label htmlFor="subcounty" className="text-sm font-medium text-slate-700">Subcounty</Label>
-                                  <Input
-                                    id="subcounty"
-                                    value={activityForm.subcounty}
-                                    onChange={(e) => setActivityForm({...activityForm, subcounty: e.target.value})}
-                                    placeholder="Enter subcounty"
-                                    className="rounded-xl border-slate-300 focus:border-blue-500 focus:ring-blue-500 transition-all bg-white"
-                                  />
-                                </div>
-                                <div className="space-y-2">
-                                  <Label htmlFor="location" className="text-sm font-medium text-slate-700">Location</Label>
-                                  <Input
-                                    id="location"
-                                    value={activityForm.location}
-                                    onChange={(e) => setActivityForm({...activityForm, location: e.target.value})}
-                                    placeholder="Enter location"
-                                    className="rounded-xl border-slate-300 focus:border-blue-500 focus:ring-blue-500 transition-all bg-white"
-                                  />
-                                </div>
-                              </div>
-                              <div className="space-y-2">
-                                <Label htmlFor="namesOfPersons" className="text-sm font-medium text-slate-700">Participant Names</Label>
-                                <Textarea
-                                  id="namesOfPersons"
-                                  value={activityForm.namesOfPersons}
-                                  onChange={(e) => setActivityForm({...activityForm, namesOfPersons: e.target.value})}
-                                  placeholder="Enter names separated by commas"
-                                  className="rounded-xl border-slate-300 focus:border-blue-500 focus:ring-blue-500 transition-all bg-white min-h-[80px]"
-                                />
-                              </div>
-                              <div className="space-y-2">
-                                <Label htmlFor="roles" className="text-sm font-medium text-slate-700">Roles</Label>
-                                <Textarea
-                                  id="roles"
-                                  value={activityForm.roles}
-                                  onChange={(e) => setActivityForm({...activityForm, roles: e.target.value})}
-                                  placeholder="Enter roles separated by commas"
-                                  className="rounded-xl border-slate-300 focus:border-blue-500 focus:ring-blue-500 transition-all bg-white min-h-[80px]"
-                                />
-                              </div>
-                            </div>
-                            <div className="flex justify-end gap-3">
-                              <Button 
-                                variant="outline" 
-                                onClick={() => setIsAddDialogOpen(false)}
-                                className="rounded-xl border-slate-300 hover:border-slate-400 transition-all text-slate-700"
-                              >
-                                Cancel
-                              </Button>
-                              <Button 
-                                onClick={handleAddActivity}
-                                className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 rounded-xl text-white font-semibold shadow-lg hover:shadow-xl transition-all"
-                              >
-                                <Calendar className="h-4 w-4 mr-2" />
-                                Create Activity
-                              </Button>
-                            </div>
-                          </DialogContent>
                         </Dialog>
                       </div>
                     </div>
@@ -840,199 +726,6 @@ const DashboardOverview = () => {
             </div>
           </>
         )}
-
-        {/* View All Activities Dialog */}
-        <Dialog open={isViewAllDialogOpen} onOpenChange={setIsViewAllDialogOpen}>
-          <DialogContent className="max-w-6xl max-h-[80vh] bg-white rounded-2xl border-0 shadow-2xl">
-            <DialogHeader>
-              <DialogTitle className="text-xl font-semibold text-slate-900 flex items-center justify-between">
-                <span>All Activities</span>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setIsViewAllDialogOpen(false)}
-                  className="h-8 w-8 rounded-lg hover:bg-slate-100 transition-colors text-slate-600"
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-              </DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2">
-              {allActivities.map((activity) => (
-                <div key={activity.id} className="group relative">
-                  <div className="relative bg-white/95 backdrop-blur-sm rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 p-6">
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <h4 className="font-semibold text-slate-900 mb-3 group-hover:text-blue-600 transition-colors">
-                          {activity.activityName}
-                        </h4>
-                        <div className="space-y-2 text-sm text-slate-600">
-                          <div className="flex items-center gap-3">
-                            <Calendar className="h-4 w-4 text-slate-500" />
-                            <span className="font-medium">{new Date(activity.date).toLocaleDateString()}</span>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <MapPin className="h-4 w-4 text-slate-500" />
-                            <span>{activity.location}, {activity.county}</span>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <Users className="h-4 w-4 text-slate-500" />
-                            <span className="font-semibold">{activity.numberOfPersons} participants</span>
-                          </div>
-                          {activity.namesOfPersons && (
-                            <div>
-                              <p className="font-semibold text-blue-600 text-sm">Participants:</p>
-                              <p className="text-sm text-slate-700">{activity.namesOfPersons}</p>
-                            </div>
-                          )}
-                          {activity.roles && (
-                            <div>
-                              <p className="font-semibold text-blue-600 text-sm">Roles:</p>
-                              <p className="text-sm text-slate-700">{activity.roles}</p>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                      <div className="flex gap-2 ml-4">
-                        <Button
-                          size="sm"
-                          onClick={() => openEditDialog(activity)}
-                          className="bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white rounded-lg transition-all shadow-sm"
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          onClick={() => handleDeleteActivity(activity.id)}
-                          className="rounded-lg transition-all shadow-sm"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </DialogContent>
-        </Dialog>
-
-        {/* Edit Activity Dialog */}
-        <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-          <DialogContent className="sm:max-w-[600px] bg-white rounded-2xl border-0 shadow-2xl">
-            <DialogHeader>
-              <DialogTitle className="text-xl font-semibold text-slate-900">
-                Edit Activity
-              </DialogTitle>
-            </DialogHeader>
-            <div className="grid gap-6 py-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="edit-activityName" className="text-sm font-medium text-slate-700">Activity Name</Label>
-                  <Input
-                    id="edit-activityName"
-                    value={activityForm.activityName}
-                    onChange={(e) => setActivityForm({...activityForm, activityName: e.target.value})}
-                    placeholder="Enter activity name"
-                    className="rounded-xl border-slate-300 focus:border-blue-500 focus:ring-blue-500 transition-all bg-white"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-date" className="text-sm font-medium text-slate-700">Date</Label>
-                  <Input
-                    id="edit-date"
-                    type="date"
-                    value={activityForm.date}
-                    onChange={(e) => setActivityForm({...activityForm, date: e.target.value})}
-                    className="rounded-xl border-slate-300 focus:border-blue-500 focus:ring-blue-500 transition-all bg-white"
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="edit-numberOfPersons" className="text-sm font-medium text-slate-700">Participants</Label>
-                  <Input
-                    id="edit-numberOfPersons"
-                    type="number"
-                    value={activityForm.numberOfPersons}
-                    onChange={(e) => setActivityForm({...activityForm, numberOfPersons: e.target.value})}
-                    placeholder="Number of participants"
-                    className="rounded-xl border-slate-300 focus:border-blue-500 focus:ring-blue-500 transition-all bg-white"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-county" className="text-sm font-medium text-slate-700">County</Label>
-                  <Input
-                    id="edit-county"
-                    value={activityForm.county}
-                    onChange={(e) => setActivityForm({...activityForm, county: e.target.value})}
-                    placeholder="Enter county"
-                    className="rounded-xl border-slate-300 focus:border-blue-500 focus:ring-blue-500 transition-all bg-white"
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="edit-subcounty" className="text-sm font-medium text-slate-700">Subcounty</Label>
-                  <Input
-                    id="edit-subcounty"
-                    value={activityForm.subcounty}
-                    onChange={(e) => setActivityForm({...activityForm, subcounty: e.target.value})}
-                    placeholder="Enter subcounty"
-                    className="rounded-xl border-slate-300 focus:border-blue-500 focus:ring-blue-500 transition-all bg-white"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-location" className="text-sm font-medium text-slate-700">Location</Label>
-                  <Input
-                    id="edit-location"
-                    value={activityForm.location}
-                    onChange={(e) => setActivityForm({...activityForm, location: e.target.value})}
-                    placeholder="Enter location"
-                    className="rounded-xl border-slate-300 focus:border-blue-500 focus:ring-blue-500 transition-all bg-white"
-                  />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit-namesOfPersons" className="text-sm font-medium text-slate-700">Participant Names</Label>
-                <Textarea
-                  id="edit-namesOfPersons"
-                  value={activityForm.namesOfPersons}
-                  onChange={(e) => setActivityForm({...activityForm, namesOfPersons: e.target.value})}
-                  placeholder="Enter names separated by commas"
-                  className="rounded-xl border-slate-300 focus:border-blue-500 focus:ring-blue-500 transition-all bg-white min-h-[80px]"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit-roles" className="text-sm font-medium text-slate-700">Roles</Label>
-                <Textarea
-                  id="edit-roles"
-                  value={activityForm.roles}
-                  onChange={(e) => setActivityForm({...activityForm, roles: e.target.value})}
-                  placeholder="Enter roles separated by commas"
-                  className="rounded-xl border-slate-300 focus:border-blue-500 focus:ring-blue-500 transition-all bg-white min-h-[80px]"
-                />
-              </div>
-            </div>
-            <div className="flex justify-end gap-3">
-              <Button 
-                variant="outline" 
-                onClick={() => setIsEditDialogOpen(false)}
-                className="rounded-xl border-slate-300 hover:border-slate-400 transition-all text-slate-700"
-              >
-                Cancel
-              </Button>
-              <Button 
-                onClick={handleEditActivity}
-                className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 rounded-xl text-white font-semibold shadow-lg hover:shadow-xl transition-all"
-              >
-                <Edit className="h-4 w-4 mr-2" />
-                Update Activity
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
       </div>
     </div>
   );
