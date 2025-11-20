@@ -10,7 +10,9 @@ import {
   ChevronRight,
   Beef,
   Upload,
-  Activity
+  Activity,
+  UserPlus,
+  LineChart
 } from "lucide-react";
 
 import { NavLink } from "@/components/NavLink";
@@ -76,8 +78,8 @@ const menuItems = [
   },
   { 
     title: "On Boarding",
-    icon: Activity,
-    url: "/dashboard/activities"
+    icon: UserPlus,
+    url: "/dashboard/onboarding"
   },
   { 
     title: "User Management",
@@ -103,7 +105,7 @@ export function DashboardSidebar() {
         {/* Branding Section */}
         <SidebarGroup>
           <SidebarGroupLabel>
-            <div className="flex items-center gap-3 p-2">
+            <div className="flex items-center gap-2 p-2">
               <div className="w-8 h-8 rounded-full bg-primary/10 shadow flex items-center justify-center">
                 <img src="/img/logo.png" className="w-8 h-8 rounded-full object-cover" alt="GenCo Logo" />
               </div>
@@ -123,11 +125,28 @@ export function DashboardSidebar() {
                   <NavLink
                     to="/dashboard"
                     end
-                    className="hover:bg-sidebar-accent text-sidebar-foreground mt-6"
+                    className="hover:bg-sidebar-accent text-sidebar-foreground mt-4"
                     activeClassName="bg-sidebar-primary text-sidebar-primary-foreground font-medium"
                   >
                     <TrendingUp className="h-4 w-4" />
                     {!collapsed && <span>Dashboard</span>}
+                  </NavLink>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+           <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild>
+                  <NavLink
+                    to="/dashboard/reports"
+                    end
+                    className="hover:bg-sidebar-accent text-sidebar-foreground"
+                    activeClassName="bg-sidebar-primary text-sidebar-primary-foreground font-medium"
+                  >
+                    <LineChart className="h-4 w-4" />
+                    {!collapsed && <span>Perfomance report</span>}
                   </NavLink>
                 </SidebarMenuButton>
               </SidebarMenuItem>

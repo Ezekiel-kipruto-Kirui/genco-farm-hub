@@ -9,6 +9,7 @@ import ProtectedRoute from "@/components/ProtectedRoute";
 import Auth from "./pages/Auth";
 import DashboardLayout from "./components/DashboardLayout";
 import DashboardOverview from "./pages/DashboardOverview";
+import PerformanceReport from "./pages/reportspage";
 import LivestockFarmersPage from "./pages/LivestockFarmersPage";
 import LivestockFarmersAnalytics from "./pages/LivestockFarmersAnalytics";
 import FodderFarmersPage from "./pages/FodderFarmersPage";
@@ -17,6 +18,7 @@ import HayStoragepage from "./pages/HayStoragepage";
 import CapacityBuildingPage from "./pages/CapacityBuildingPage";
 import LivestockOfftakePage from "./pages/LivestockOfftakePage";
 import ActivitiesPage from "./pages/ActivitiesPage"
+import OnboardingPage from "./pages/onboardingpage";
 
 import FodderOfftakePage from "./pages/FodderOfftakePage";
 import UserManagementPage from "./pages/UserManagementPage";
@@ -47,6 +49,17 @@ const App = () => (
             >
               {/* Nested routes under DashboardLayout */}
               <Route index element={<DashboardOverview />} />
+              
+              {/* Report route - FIXED: removed leading slash */}
+              <Route
+                path="reports"
+                element={
+                  <ProtectedRoute allowedRoles={["admin", "chief-admin"]}>
+                    <PerformanceReport/>
+                  </ProtectedRoute>
+                }
+              />
+              
               <Route path="livestock">
                 <Route index element={<LivestockFarmersPage />} />
                 <Route path="analytics" element={<LivestockFarmersAnalytics />} />
@@ -62,13 +75,11 @@ const App = () => (
               {/* Offtake Routes */}
               <Route path="livestock-offtake">
                 <Route index element={<LivestockOfftakePage />} />
-             
               </Route>
               <Route path="fodder-offtake" element={<FodderOfftakePage />} />
               
-               <Route path="activities" element={<ActivitiesPage />} />
-              
-
+              <Route path="activities" element={<ActivitiesPage />} />
+              <Route path="onboarding" element={<OnboardingPage />} />
 
               {/* Admin Only Routes */}
               <Route 

@@ -1,27 +1,21 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { collection, getDocs, query } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, AreaChart, Area, LineChart, Line, ComposedChart } from "recharts";
-import { Users, GraduationCap, Beef, Calendar, TrendingUp, Target, BarChart3, Map } from "lucide-react";
+import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, AreaChart, Area, LineChart, Line } from "recharts";
+import { Users, GraduationCap, Beef, Calendar, TrendingUp, Target, BarChart3, Map, Award } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 
 const COLORS = {
-  orange: "hsl(25 95% 53%)",
-  navy: "hsl(221 83% 53%)",
-  green: "hsl(142 76% 36%)",
-  blue: "hsl(217 91% 60%)",
-  purple: "hsl(272 91% 65%)",
-  red: "hsl(0 84% 60%)",
-  teal: "hsl(173 80% 40%)",
-  amber: "hsl(45 93% 47%)",
-  indigo: "hsl(239 84% 67%)",
-  pink: "hsl(330 81% 60%)",
-  cyan: "hsl(187 85% 53%)"
+  navy: "#1e3a8a",
+  orange: "#f97316", 
+  yellow: "#f59e0b"
 };
+
+const BAR_COLORS = [COLORS.navy, COLORS.orange, COLORS.yellow];
 
 const LivestockFarmersAnalytics = () => {
   const [loading, setLoading] = useState(true);
@@ -48,6 +42,7 @@ const LivestockFarmersAnalytics = () => {
     startDate: "",
     endDate: ""
   });
+  const [timeFrame, setTimeFrame] = useState<'weekly' | 'monthly' | 'yearly'>('monthly');
 
   // Fetch all data on component mount
   useEffect(() => {
@@ -59,7 +54,7 @@ const LivestockFarmersAnalytics = () => {
     if (allFarmers.length > 0 && trainingRecords.length > 0) {
       applyFilters();
     }
-  }, [dateRange, allFarmers, trainingRecords]);
+  }, [dateRange, allFarmers, trainingRecords, timeFrame]);
 
   const fetchAllData = async () => {
     try {
@@ -241,20 +236,20 @@ const LivestockFarmersAnalytics = () => {
 
     // Gender data for doughnut chart
     setGenderData([
-      { name: "Male", value: male, color: COLORS.orange },
-      { name: "Female", value: female, color: COLORS.navy },
+      { name: "Male", value: male, color: COLORS.navy },
+      { name: "Female", value: female, color: COLORS.orange },
     ]);
 
     // Goats data for doughnut chart
     setGoatsData([
-      { name: "Male Goats", value: totalMaleGoats, color: COLORS.orange },
-      { name: "Female Goats", value: totalFemaleGoats, color: COLORS.navy },
+      { name: "Male Goats", value: totalMaleGoats, color: COLORS.navy },
+      { name: "Female Goats", value: totalFemaleGoats, color: COLORS.yellow },
     ]);
 
     // Training comparison data - FIXED: Ensure we have valid data
     const comparisonData = [
-      { name: "Trained", value: trained > 0 ? trained : 1, color: COLORS.blue },
-      { name: "Not Trained", value: notTrained > 0 ? notTrained : 1, color: COLORS.red },
+      { name: "Trained", value: trained > 0 ? trained : 1, color: COLORS.yellow },
+      { name: "Not Trained", value: notTrained > 0 ? notTrained : 1, color: COLORS.orange },
     ];
     
     console.log("Training comparison chart data:", comparisonData);
@@ -381,11 +376,15 @@ const LivestockFarmersAnalytics = () => {
     setDateRange({ startDate: "", endDate: "" });
   };
 
+  const setTimeFrameFilter = (frame: 'weekly' | 'monthly' | 'yearly') => {
+    setTimeFrame(frame);
+  };
+
   // Custom label renderer for doughnut charts
-  const renderCustomizedLabel = ({
-    cx, cy, midAngle, innerRadius, outerRadius, percent, value
+  const renderCustomizedLabel = useCallback(({
+    cx, cy, midAngle, innerRadius, outerRadius, percent
   }: any) => {
-    if (value === 0) return null;
+    if (percent === 0) return null;
     
     const RADIAN = Math.PI / 180;
     const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
@@ -405,58 +404,41 @@ const LivestockFarmersAnalytics = () => {
         {`${(percent * 100).toFixed(0)}%`}
       </text>
     );
-  };
+  }, []);
 
-  // Modern Stats Card Component
-  const StatsCard = ({ title, value, icon: Icon, description, trend, color = "blue", badge }: any) => {
-    const colorConfig = {
-      blue: { bg: "from-blue-500 to-blue-600", iconBg: "bg-blue-100", iconColor: "text-blue-600" },
-      green: { bg: "from-green-500 to-green-600", iconBg: "bg-green-100", iconColor: "text-green-600" },
-      orange: { bg: "from-orange-500 to-orange-600", iconBg: "bg-orange-100", iconColor: "text-orange-600" },
-      purple: { bg: "from-purple-500 to-purple-600", iconBg: "bg-purple-100", iconColor: "text-purple-600" },
-      teal: { bg: "from-teal-500 to-teal-600", iconBg: "bg-teal-100", iconColor: "text-teal-600" }
-    };
-
-    const colors = colorConfig[color] || colorConfig.blue;
-
-    return (
-      <Card className="relative overflow-hidden group hover:shadow-xl transition-all duration-300 border-0 bg-gradient-to-br from-white to-gray-50">
-        <div className={`absolute inset-0 bg-gradient-to-br ${colors.bg} opacity-5 group-hover:opacity-10 transition-opacity duration-300`}></div>
-        <div className={`absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b ${colors.bg}`}></div>
-        
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 pt-4 pl-6">
-          <CardTitle className="text-sm font-medium text-gray-600">{title}</CardTitle>
-          <div className={`p-2 rounded-xl ${colors.iconBg} shadow-sm`}>
-            <Icon className={`h-4 w-4 ${colors.iconColor}`} />
-          </div>
-        </CardHeader>
-        <CardContent className="pl-6 pb-4">
-          <div className="flex items-baseline gap-2">
-            <div className="text-2xl font-bold text-gray-900">{value}</div>
-            {trend && (
-              <Badge variant="secondary" className={`text-xs ${trend > 0 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                <TrendingUp className={`h-3 w-3 mr-1 ${trend > 0 ? 'text-green-600' : 'text-red-600'}`} />
-                {trend > 0 ? '+' : ''}{trend}%
-              </Badge>
-            )}
-            {badge && (
-              <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700">
-                {badge}
-              </Badge>
-            )}
-          </div>
-          {description && (
-            <p className="text-xs text-gray-500 mt-2 font-medium">
-              {description}
-            </p>
-          )}
-        </CardContent>
-      </Card>
-    );
-  };
-
-  // Region colors for the chart
-  const regionColors = [COLORS.blue, COLORS.green, COLORS.orange, COLORS.purple];
+  // Stats Card Component
+  const StatsCard = ({ title, value, icon: Icon, description, color = "navy" }: any) => (
+    <Card className="relative overflow-hidden group hover:shadow-xl transition-all duration-300 border-0 bg-gradient-to-br from-white to-gray-50">
+      <div className={`absolute left-0 top-0 bottom-0 w-1 ${
+        color === 'navy' ? 'bg-blue-900' :
+        color === 'orange' ? 'bg-orange-500' :
+        color === 'yellow' ? 'bg-yellow-500' : 'bg-blue-900'
+      }`}></div>
+      
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 pt-4 pl-6">
+        <CardTitle className="text-sm font-medium text-gray-600">{title}</CardTitle>
+        <div className={`p-2 rounded-xl ${
+          color === 'navy' ? 'bg-blue-100' :
+          color === 'orange' ? 'bg-orange-100' :
+          color === 'yellow' ? 'bg-yellow-100' : 'bg-blue-100'
+        } shadow-sm`}>
+          <Icon className={`h-4 w-4 ${
+            color === 'navy' ? 'text-blue-900' :
+            color === 'orange' ? 'text-orange-600' :
+            color === 'yellow' ? 'text-yellow-600' : 'text-blue-900'
+          }`} />
+        </div>
+      </CardHeader>
+      <CardContent className="pl-6 pb-4">
+        <div className="text-2xl font-bold text-gray-900">{value}</div>
+        {description && (
+          <p className="text-xs text-gray-500 mt-2 font-medium">
+            {description}
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
 
   if (loading) {
     return (
@@ -469,9 +451,9 @@ const LivestockFarmersAnalytics = () => {
 
   return (
     <div className="space-y-6 p-1">
-      {/* Header */}
-      <div className="">
-       
+      {/* Header and Filters */}
+      <div className="flex flex-col justify-between items-start gap-4">
+        <h1 className="text-xl font-bold text-gray-900">Livestock Farmers Analytics</h1>
 
         {/* Date Range Filter */}
         <Card className="w-full lg:w-auto border-0 shadow-lg bg-white">
@@ -499,7 +481,7 @@ const LivestockFarmersAnalytics = () => {
                   />
                 </div>
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <Button variant="outline" onClick={setWeekFilter} className="text-xs">
                   This Week
                 </Button>
@@ -516,13 +498,13 @@ const LivestockFarmersAnalytics = () => {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-3">
         <StatsCard 
           title="Total Farmers" 
           value={stats.total} 
           icon={Users}
           description={`${stats.maleFarmers} male, ${stats.femaleFarmers} female`}
-          color="blue"
+          color="navy"
         />
 
         <StatsCard 
@@ -530,8 +512,7 @@ const LivestockFarmersAnalytics = () => {
           value={stats.trained} 
           icon={GraduationCap}
           description={`${stats.trainingRate.toFixed(1)}% of livestock farmers`}
-          color="green"
-          badge={`${stats.totalTrainedFromCapacity} total trained`}
+          color="yellow"
         />
 
         <StatsCard 
@@ -543,24 +524,24 @@ const LivestockFarmersAnalytics = () => {
         />
       </div>
 
-      {/* Charts Grid - Updated layout */}
+      {/* Charts Grid */}
       <div className="grid gap-6 md:grid-cols-2">
         {/* Gender Distribution Doughnut */}
         <Card className="border-0 shadow-lg bg-white">
           <CardHeader className="pb-4">
-            <CardTitle className="font-display flex items-center gap-2 text-gray-800">
-              <Users className="h-5 w-5 text-blue-600" />
+            <CardTitle className="text-md flex items-center gap-2 text-gray-800">
+              <Users className="h-5 w-5 text-blue-900" />
               Farmers by Gender
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
+            <ResponsiveContainer width="100%" height={250}>
               <PieChart>
                 <Pie
                   data={genderData}
                   cx="50%"
                   cy="50%"
-                  innerRadius={70}
+                  innerRadius={60}
                   outerRadius={100}
                   paddingAngle={2}
                   dataKey="value"
@@ -568,22 +549,11 @@ const LivestockFarmersAnalytics = () => {
                   labelLine={false}
                 >
                   {genderData.map((entry, index) => (
-                    <Cell 
-                      key={`cell-${index}`} 
-                      fill={entry.color} 
-                    />
+                    <Cell key={`cell-${index}`} fill={entry.color} />
                   ))}
                 </Pie>
-                <Tooltip 
-                  formatter={(value: number) => [value, "Farmers"]}
-                />
-                <Legend 
-                  verticalAlign="bottom" 
-                  height={36}
-                  formatter={(value, entry) => (
-                    <span style={{ color: '#374151', fontSize: '12px', fontWeight: '500' }}>{value}</span>
-                  )}
-                />
+                <Tooltip formatter={(value: number) => [value, "Farmers"]} />
+                <Legend />
               </PieChart>
             </ResponsiveContainer>
           </CardContent>
@@ -592,19 +562,19 @@ const LivestockFarmersAnalytics = () => {
         {/* Training Comparison Doughnut */}
         <Card className="border-0 shadow-lg bg-white">
           <CardHeader className="pb-4">
-            <CardTitle className="font-display flex items-center gap-2 text-gray-800">
-              <GraduationCap className="h-5 w-5 text-green-600" />
+            <CardTitle className="text-md flex items-center gap-2 text-gray-800">
+              <GraduationCap className="h-5 w-5 text-yellow-600" />
               Training Status
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
+            <ResponsiveContainer width="100%" height={250}>
               <PieChart>
                 <Pie
                   data={trainingComparisonData}
                   cx="50%"
                   cy="50%"
-                  innerRadius={70}
+                  innerRadius={60}
                   outerRadius={100}
                   paddingAngle={2}
                   dataKey="value"
@@ -614,26 +584,15 @@ const LivestockFarmersAnalytics = () => {
                   endAngle={-270}
                 >
                   {trainingComparisonData.map((entry, index) => (
-                    <Cell 
-                      key={`cell-${index}`} 
-                      fill={entry.color} 
-                    />
+                    <Cell key={`cell-${index}`} fill={entry.color} />
                   ))}
                 </Pie>
-                <Tooltip 
-                  formatter={(value: number, name) => [value, name]}
-                />
-                <Legend 
-                  verticalAlign="bottom" 
-                  height={36}
-                  formatter={(value, entry) => (
-                    <span style={{ color: '#374151', fontSize: '12px', fontWeight: '500' }}>{value}</span>
-                  )}
-                />
+                <Tooltip formatter={(value: number, name) => [value, name]} />
+                <Legend />
               </PieChart>
             </ResponsiveContainer>
             <div className="text-center mt-2">
-              <Badge variant="outline" className="bg-blue-50 text-blue-700 text-xs">
+              <Badge variant="outline" className="bg-blue-50 text-blue-900 text-xs">
                 Total trained: {stats.totalTrainedFromCapacity}
               </Badge>
             </div>
@@ -643,19 +602,19 @@ const LivestockFarmersAnalytics = () => {
         {/* Animal Census Doughnut */}
         <Card className="border-0 shadow-lg bg-white">
           <CardHeader className="pb-4">
-            <CardTitle className="font-display flex items-center gap-2 text-gray-800">
+            <CardTitle className="text-md flex items-center gap-2 text-gray-800">
               <Beef className="h-5 w-5 text-orange-600" />
               Animal Census
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
+            <ResponsiveContainer width="100%" height={250}>
               <PieChart>
                 <Pie
                   data={goatsData}
                   cx="50%"
                   cy="50%"
-                  innerRadius={70}
+                  innerRadius={60}
                   outerRadius={100}
                   paddingAngle={2}
                   dataKey="value"
@@ -663,40 +622,26 @@ const LivestockFarmersAnalytics = () => {
                   labelLine={false}
                 >
                   {goatsData.map((entry, index) => (
-                    <Cell 
-                      key={`cell-${index}`} 
-                      fill={entry.color} 
-                    />
+                    <Cell key={`cell-${index}`} fill={entry.color} />
                   ))}
                 </Pie>
-                <Tooltip 
-                  formatter={(value: number) => [value.toLocaleString(), "Goats"]}
-                />
-                <Legend 
-                  verticalAlign="bottom" 
-                  height={36}
-                  formatter={(value, entry) => (
-                    <span style={{ color: '#374151', fontSize: '12px', fontWeight: '500' }}>{value}</span>
-                  )}
-                />
+                <Tooltip formatter={(value: number) => [value.toLocaleString(), "Goats"]} />
+                <Legend />
               </PieChart>
             </ResponsiveContainer>
           </CardContent>
         </Card>
 
-        {/* Regional Performance - Compact Multi-Region Chart */}
+        {/* Regional Performance */}
         <Card className="border-0 shadow-lg bg-white">
           <CardHeader className="pb-4">
-            <CardTitle className="font-display flex items-center gap-2 text-gray-800">
-              <Map className="h-5 w-5 text-indigo-600" />
+            <CardTitle className="text-md flex items-center gap-2 text-gray-800">
+              <Map className="h-5 w-5 text-blue-900" />
               Regional Performance
-              <Badge variant="outline" className="ml-2 bg-indigo-50 text-indigo-700 text-xs">
-                Top {topRegions.length}
-              </Badge>
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
+            <ResponsiveContainer width="100%" height={250}>
               <LineChart data={regionalPerformanceData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
                 <XAxis 
@@ -710,12 +655,6 @@ const LivestockFarmersAnalytics = () => {
                   domain={[0, 100]}
                 />
                 <Tooltip 
-                  labelStyle={{ color: '#374151', fontWeight: 'bold', fontSize: '12px' }}
-                  contentStyle={{ 
-                    backgroundColor: 'white', 
-                    border: '1px solid #e5e7eb',
-                    borderRadius: '6px',
-                  }}
                   formatter={(value: number, name: string) => {
                     const region = topRegions.find(reg => name === reg);
                     if (region) {
@@ -730,30 +669,24 @@ const LivestockFarmersAnalytics = () => {
                   iconType="circle"
                   iconSize={8}
                   wrapperStyle={{ fontSize: '11px' }}
-                  formatter={(value) => (
-                    <span style={{ color: '#374151', fontSize: '11px', fontWeight: '500' }}>
-                      {value}
-                    </span>
-                  )}
                 />
                 
-                {/* Line charts for the main performance curves */}
                 {topRegions.map((region, index) => (
                   <Line
                     key={region}
                     type="monotone"
                     dataKey={region}
-                    stroke={regionColors[index]}
+                    stroke={BAR_COLORS[index]}
                     strokeWidth={2}
                     dot={{ 
-                      fill: regionColors[index], 
+                      fill: BAR_COLORS[index], 
                       strokeWidth: 1, 
                       r: 3,
                       stroke: 'white'
                     }}
                     activeDot={{ 
                       r: 4, 
-                      fill: regionColors[index],
+                      fill: BAR_COLORS[index],
                       stroke: 'white',
                       strokeWidth: 1
                     }}
@@ -762,33 +695,6 @@ const LivestockFarmersAnalytics = () => {
                 ))}
               </LineChart>
             </ResponsiveContainer>
-            
-            {/* Compact Regional Performance Summary */}
-            <div className="mt-4 grid grid-cols-2 gap-3">
-              {topRegions.map((region, index) => {
-                const regionData = regionalPerformanceData.map(week => week[region] || 0);
-                const avgPerformance = regionData.length > 0 
-                  ? Math.round(regionData.reduce((sum, perf) => sum + perf, 0) / regionData.length)
-                  : 0;
-
-                return (
-                  <div key={region} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
-                    <div className="flex items-center gap-2">
-                      <div 
-                        className="w-2 h-2 rounded-full" 
-                        style={{ backgroundColor: regionColors[index] }}
-                      />
-                      <span className="text-xs font-medium text-gray-700 truncate">
-                        {region}
-                      </span>
-                    </div>
-                    <Badge variant="secondary" className="text-xs bg-white text-gray-700">
-                      {avgPerformance}%
-                    </Badge>
-                  </div>
-                );
-              })}
-            </div>
           </CardContent>
         </Card>
       </div>
