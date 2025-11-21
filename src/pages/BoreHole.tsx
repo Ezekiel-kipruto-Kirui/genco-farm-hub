@@ -11,6 +11,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Download, MapPin, Eye, Calendar, Droplets, Users, Globe, Building } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { isChiefAdmin } from "./onboardingpage";
+
 
 // Types
 interface Borehole {
@@ -132,6 +134,11 @@ const BoreholePage = () => {
     hasPrev: false
   });
 
+     const userIsChiefAdmin = useMemo(() => {
+      
+
+        return isChiefAdmin(userRole);
+    }, [userRole]);
   // Data fetching
   const fetchAllData = useCallback(async () => {
     try {

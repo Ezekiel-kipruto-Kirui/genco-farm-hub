@@ -7,9 +7,19 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
-import { Download, Users, Edit, Trash2, GraduationCap, Eye, MapPin, Upload, Plus, Calendar, X } from "lucide-react";
+import { Download, Users, Edit, Trash2, GraduationCap, Eye, MapPin, Upload, Plus, Calendar, X, UserPlus } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
 import * as XLSX from 'xlsx';
+
+interface FarmerData {
+    id?: string;
+    name: string;
+    idNo: string;
+    phoneNo: string;
+    location: string;
+    region: string;
+}
 
 interface OnboardingData {
     id?: string;
@@ -17,11 +27,7 @@ interface OnboardingData {
     topic: string;
     fieldofficer: string;
     fieldofficerrole: string;
-    farmername: string;
-    farmeridNo: string;
-    farmerphoneNo: string;
-    farmerlocation: string;
-    farmerregion: string;
+    farmers: FarmerData[];
     createdAt?: Date;
 }
 
@@ -36,6 +42,11 @@ interface Stats {
     uniqueLocations: number;
 }
 
+// Exportable isChiefAdmin function
+export const isChiefAdmin = (userRole: string | null): boolean => {
+    return userRole === 'chief-admin';
+};
+
 const OnboardingPage = () => {
     const [onboarding, setOnboarding] = useState<OnboardingData[]>([]);
     const [filteredOnboarding, setFilteredOnboarding] = useState<OnboardingData[]>([]);
@@ -45,20 +56,25 @@ const OnboardingPage = () => {
         date: "",
         fieldofficer: "",
         fieldofficerrole: "",
-        farmername: "",
-        farmeridNo: "",
-        farmerphoneNo: "",
-        farmerregion: "",
-        farmerlocation: "",
     });
+    const [farmers, setFarmers] = useState<FarmerData[]>([
+        { name: "", idNo: "", phoneNo: "", location: "", region: "" }
+    ]);
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
     const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+    const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
     const [selectedRecord, setSelectedRecord] = useState<OnboardingData | null>(null);
     const [loading, setLoading] = useState(false);
     const [exportLoading, setExportLoading] = useState(false);
     const { toast } = useToast();
+    const { user, userRole } = useAuth();
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    // Use the exportable isChiefAdmin function
+    const userIsChiefAdmin = useMemo(() => {
+        return isChiefAdmin(userRole);
+    }, [userRole]);
 
     // Filters state - simplified
     const [filters, setFilters] = useState<Filters>({
@@ -121,11 +137,7 @@ const OnboardingPage = () => {
                     topic: docData.topic || "",
                     fieldofficer: docData.fieldofficer || "",
                     fieldofficerrole: docData.fieldofficerrole || "",
-                    farmername: docData.farmername || "",
-                    farmeridNo: docData.farmeridNo || "",
-                    farmerphoneNo: docData.farmerphoneNo || "",
-                    farmerlocation: docData.farmerlocation || "",
-                    farmerregion: docData.farmerregion || "",
+                    farmers: docData.farmers || [],
                     createdAt: docData.createdAt?.toDate() || new Date()
                 } as OnboardingData;
             });
@@ -168,8 +180,9 @@ const OnboardingPage = () => {
         });
 
         // Calculate stats
-        const uniqueFarmers = new Set(filtered.map(record => record.farmeridNo || record.farmername));
-        const uniqueLocations = new Set(filtered.map(record => record.farmerlocation).filter(Boolean));
+        const allFarmers = filtered.flatMap(record => record.farmers);
+        const uniqueFarmers = new Set(allFarmers.map(farmer => farmer.idNo || farmer.name));
+        const uniqueLocations = new Set(allFarmers.map(farmer => farmer.location).filter(Boolean));
 
         const calculatedStats = {
             totalFarmers: uniqueFarmers.size,
@@ -200,6 +213,25 @@ const OnboardingPage = () => {
         }));
     };
 
+    const handleFarmerChange = (index: number, field: keyof FarmerData, value: string) => {
+        const updatedFarmers = [...farmers];
+        updatedFarmers[index] = {
+            ...updatedFarmers[index],
+            [field]: value
+        };
+        setFarmers(updatedFarmers);
+    };
+
+    const addFarmer = () => {
+        setFarmers(prev => [...prev, { name: "", idNo: "", phoneNo: "", location: "", region: "" }]);
+    };
+
+    const removeFarmer = (index: number) => {
+        if (farmers.length > 1) {
+            setFarmers(prev => prev.filter((_, i) => i !== index));
+        }
+    };
+
     const handleFilterChange = (key: keyof Filters, value: string) => {
         setFilters(prev => ({ 
             ...prev, 
@@ -214,17 +246,13 @@ const OnboardingPage = () => {
             date: "",
             fieldofficer: "",
             fieldofficerrole: "",
-            farmername: "",
-            farmeridNo: "",
-            farmerphoneNo: "",
-            farmerregion: "",
-            farmerlocation: "",
         });
+        setFarmers([{ name: "", idNo: "", phoneNo: "", location: "", region: "" }]);
     };
 
     const handleAddOnboarding = async () => {
         try {
-            if (!onboardingForm.topic || !onboardingForm.date || !onboardingForm.fieldofficer || !onboardingForm.farmername) {
+            if (!onboardingForm.topic || !onboardingForm.date || !onboardingForm.fieldofficer) {
                 toast({
                     title: "Validation Error",
                     description: "Please fill in all required fields",
@@ -233,13 +261,30 @@ const OnboardingPage = () => {
                 return;
             }
 
+            // Validate farmers data
+            const validFarmers = farmers.filter(farmer => farmer.name.trim() !== "");
+            if (validFarmers.length === 0) {
+                toast({
+                    title: "Validation Error",
+                    description: "Please add at least one farmer",
+                    variant: "destructive",
+                });
+                return;
+            }
+
             setLoading(true);
+
+            const onboardingData = {
+                ...onboardingForm,
+                date: new Date(onboardingForm.date),
+                farmers: validFarmers,
+                createdAt: new Date()
+            };
 
             if (onboardingForm.id) {
                 // Update existing record
                 await updateDoc(doc(db, "Onboarding", onboardingForm.id), {
-                    ...onboardingForm,
-                    date: new Date(onboardingForm.date),
+                    ...onboardingData,
                     updatedAt: new Date()
                 });
                 toast({
@@ -248,11 +293,7 @@ const OnboardingPage = () => {
                 });
             } else {
                 // Add new record
-                await addDoc(collection(db, "Onboarding"), {
-                    ...onboardingForm,
-                    date: new Date(onboardingForm.date),
-                    createdAt: new Date()
-                });
+                await addDoc(collection(db, "Onboarding"), onboardingData);
                 toast({
                     title: "Success",
                     description: "Onboarding record added successfully",
@@ -281,12 +322,8 @@ const OnboardingPage = () => {
             date: record.date.toISOString().split('T')[0],
             fieldofficer: record.fieldofficer,
             fieldofficerrole: record.fieldofficerrole,
-            farmername: record.farmername,
-            farmeridNo: record.farmeridNo,
-            farmerphoneNo: record.farmerphoneNo,
-            farmerregion: record.farmerregion,
-            farmerlocation: record.farmerlocation,
         });
+        setFarmers(record.farmers.length > 0 ? record.farmers : [{ name: "", idNo: "", phoneNo: "", location: "", region: "" }]);
         setIsDialogOpen(true);
     };
 
@@ -324,11 +361,7 @@ const OnboardingPage = () => {
 
     const handleView = (record: OnboardingData) => {
         setSelectedRecord(record);
-        // You can implement a view dialog here if needed
-        toast({
-            title: "Record Details",
-            description: `Viewing record for ${record.farmername}`,
-        });
+        setIsViewDialogOpen(true);
     };
 
     const handleExcelUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -339,48 +372,29 @@ const OnboardingPage = () => {
             setLoading(true);
             
             const data = await readExcelFile(file);
-            const validatedData = validateExcelData(data);
+            const validatedFarmers = validateExcelData(data);
             
-            if (validatedData.length === 0) {
+            if (validatedFarmers.length === 0) {
                 toast({
                     title: "No valid data",
-                    description: "The Excel file doesn't contain valid onboarding data or has incorrect format",
+                    description: "The Excel file doesn't contain valid farmer data or has incorrect format",
                     variant: "destructive",
                 });
                 return;
             }
 
-            const batch = writeBatch(db);
-            const onboardingCollection = collection(db, "Onboarding");
-
-            validatedData.forEach((record) => {
-                const docRef = doc(onboardingCollection);
-                batch.set(docRef, {
-                    topic: record.topic,
-                    date: new Date(record.date),
-                    fieldofficer: record.fieldofficer,
-                    fieldofficerrole: record.fieldofficerrole,
-                    farmername: record.farmername,
-                    farmeridNo: record.farmeridNo,
-                    farmerphoneNo: record.farmerphoneNo,
-                    farmerlocation: record.farmerlocation,
-                    farmerregion: record.farmerregion,
-                    createdAt: new Date()
-                });
-            });
-
-            await batch.commit();
-
+            // Add validated farmers to the current list
+            setFarmers(prev => [...prev.filter(f => f.name.trim() !== ""), ...validatedFarmers]);
+            
             toast({
                 title: "Success",
-                description: `Successfully uploaded ${validatedData.length} onboarding records`,
+                description: `Successfully loaded ${validatedFarmers.length} farmers from Excel`,
             });
 
             setIsUploadDialogOpen(false);
             if (fileInputRef.current) {
                 fileInputRef.current.value = "";
             }
-            fetchOnboardingData();
         } catch (error) {
             console.error("Error uploading Excel file:", error);
             toast({
@@ -393,59 +407,37 @@ const OnboardingPage = () => {
         }
     };
 
-    const validateExcelData = (data: any[]): OnboardingData[] => {
-        return data.filter(item => 
-            item.topic && 
-            item.date && 
-            item.fieldofficer && 
-            item.farmername
-        ).map(item => ({
-            topic: item.topic || "",
-            date: new Date(item.date),
-            fieldofficer: item.fieldofficer || "",
-            fieldofficerrole: item.fieldofficerrole || "",
-            farmername: item.farmername || "",
-            farmeridNo: item.farmeridNo || "",
-            farmerphoneNo: item.farmerphoneNo || "",
-            farmerlocation: item.farmerlocation || "",
-            farmerregion: item.farmerregion || ""
+    const validateExcelData = (data: any[]): FarmerData[] => {
+        return data.filter(item => item.name).map(item => ({
+            name: item.name || "",
+            idNo: item.idNo || item.idNumber || item.farmeridNo || "",
+            phoneNo: item.phoneNo || item.phoneNumber || item.farmerphoneNo || "",
+            location: item.location || item.farmerlocation || "",
+            region: item.region || item.farmerregion || ""
         }));
     };
 
     const downloadTemplate = () => {
         const templateData = [
             {
-                topic: "Livestock Management",
-                date: "2024-01-15",
-                fieldofficer: "John Doe",
-                fieldofficerrole: "Field Officer",
-                farmername: "Samuel Kariuki",
-                farmeridNo: "12345678",
-                farmerphoneNo: "0712345678",
-                farmerlocation: "Nakuru",
-                farmerregion: "Rift Valley"
-            },
-            {
-                topic: "Crop Rotation",
-                date: "2024-01-16",
-                fieldofficer: "Jane Smith",
-                fieldofficerrole: "Agricultural Officer",
-                farmername: "Mary Wanjiku",
-                farmeridNo: "87654321",
-                farmerphoneNo: "0723456789",
-                farmerlocation: "Kiambu",
-                farmerregion: "Central"
+                name: "Farmer Name",
+                idNo: "ID Number",
+                phoneNo: "Phone Number",
+                location: "Location",
+                region: "Region"
             }
         ];
 
         const ws = XLSX.utils.json_to_sheet(templateData);
         const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "Template");
-        XLSX.writeFile(wb, "onboarding_template.xlsx");
+        XLSX.utils.book_append_sheet(wb, ws, "Farmers Template");
+        XLSX.writeFile(wb, "farmers_template.xlsx");
     };
 
-    const handleExport = () => {
+    const handleExport = async () => {
         try {
+            setExportLoading(true);
+            
             if (filteredOnboarding.length === 0) {
                 toast({
                     title: "No Data to Export",
@@ -455,18 +447,20 @@ const OnboardingPage = () => {
                 return;
             }
 
-            const exportData = filteredOnboarding.map(record => ({
-                Date: record.date.toLocaleDateString(),
-                Topic: record.topic,
-                'Field Officer': record.fieldofficer,
-                'Field Officer Role': record.fieldofficerrole,
-                'Farmer Name': record.farmername,
-                'Farmer ID': record.farmeridNo,
-                'Phone Number': record.farmerphoneNo,
-                Location: record.farmerlocation,
-                Region: record.farmerregion,
-                'Created Date': record.createdAt?.toLocaleDateString() || 'N/A'
-            }));
+            const exportData = filteredOnboarding.flatMap(record => 
+                record.farmers.map(farmer => ({
+                    Date: record.date.toLocaleDateString(),
+                    Topic: record.topic,
+                    'Field Officer': record.fieldofficer,
+                    'Field Officer Role': record.fieldofficerrole,
+                    'Farmer Name': farmer.name,
+                    'Farmer ID': farmer.idNo,
+                    'Phone Number': farmer.phoneNo,
+                    Location: farmer.location,
+                    Region: farmer.region,
+                    'Created Date': record.createdAt?.toLocaleDateString() || 'N/A'
+                }))
+            );
 
             const ws = XLSX.utils.json_to_sheet(exportData);
             const wb = XLSX.utils.book_new();
@@ -475,7 +469,7 @@ const OnboardingPage = () => {
 
             toast({
                 title: "Export Successful",
-                description: `Exported ${filteredOnboarding.length} records`,
+                description: `Exported ${exportData.length} farmer records`,
             });
         } catch (error) {
             console.error("Error exporting data:", error);
@@ -484,6 +478,8 @@ const OnboardingPage = () => {
                 description: "Failed to export data. Please try again.",
                 variant: "destructive",
             });
+        } finally {
+            setExportLoading(false);
         }
     };
 
@@ -530,26 +526,28 @@ const OnboardingPage = () => {
 
     return (
         <div className="container mx-auto p-6 space-y-6">
-            {/* Header with Action Buttons */}
+            {/* Header - Export available for chief admin, Add only for chief admin */}
             <div className="flex justify-between items-center">
                 <h1 className="text-3xl font-bold">Onboarding</h1>
                 <div className="flex gap-2">
-                    <Button onClick={handleExport} disabled={exportLoading || filteredOnboarding.length === 0}>
-                        <Download className="w-4 h-4 mr-2" />
-                        Export ({filteredOnboarding.length})
-                    </Button>
-                    <Button onClick={() => setIsUploadDialogOpen(true)}>
-                        <Upload className="w-4 h-4 mr-2" />
-                        Upload Excel
-                    </Button>
-                    <Button onClick={openAddDialog}>
-                        <Plus className="w-4 h-4 mr-2" />
-                        Add Onboarding
-                    </Button>
+                    {/* Export button available for chief admin */}
+                    {userIsChiefAdmin && (
+                        <Button onClick={handleExport} disabled={exportLoading || filteredOnboarding.length === 0}>
+                            <Download className="w-4 h-4 mr-2" />
+                            {exportLoading ? "Exporting..." : `Export (${filteredOnboarding.flatMap(r => r.farmers).length})`}
+                        </Button>
+                    )}
+                    {/* Add button only for chief admin */}
+                    {userIsChiefAdmin && (
+                        <Button onClick={openAddDialog}>
+                            <Plus className="w-4 h-4 mr-2" />
+                            Add Onboarding
+                        </Button>
+                    )}
                 </div>
             </div>
 
-            {/* Stats Cards */}
+            {/* Stats Cards - Available for all users */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <StatsCard 
                     title="TOTAL FARMERS" 
@@ -571,7 +569,7 @@ const OnboardingPage = () => {
                 />
             </div>
 
-            {/* Simplified Filters Section */}
+            {/* Simplified Filters Section - Available for all users */}
             <Card className="shadow-lg border-0 bg-white">
                 <CardContent className="space-y-4 pt-6">
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -646,12 +644,8 @@ const OnboardingPage = () => {
                                         <th className="text-left py-3 px-4 font-medium text-gray-600">Date</th>
                                         <th className="text-left py-3 px-4 font-medium text-gray-600">Topic</th>
                                         <th className="text-left py-3 px-4 font-medium text-gray-600">Field Officer</th>
-                                        <th className="text-left py-3 px-4 font-medium text-gray-600">Officer Role</th>
-                                        <th className="text-left py-3 px-4 font-medium text-gray-600">Farmer Name</th>
-                                        <th className="text-left py-3 px-4 font-medium text-gray-600">Farmer ID</th>
-                                        <th className="text-left py-3 px-4 font-medium text-gray-600">Phone</th>
-                                        <th className="text-left py-3 px-4 font-medium text-gray-600">Location</th>
-                                        <th className="text-left py-3 px-4 font-medium text-gray-600">Region</th>
+                                        <th className="text-left py-3 px-4 font-medium text-gray-600">Participants</th>
+                                        {/* Actions column for all users */}
                                         <th className="text-left py-3 px-4 font-medium text-gray-600">Actions</th>
                                     </tr>
                                 </thead>
@@ -666,55 +660,49 @@ const OnboardingPage = () => {
                                             </td>
                                             <td className="py-3 px-4 text-xs text-gray-600">
                                                 {record.fieldofficer}
+                                                {record.fieldofficerrole && (
+                                                    <Badge variant="secondary" className="ml-2 text-xs">
+                                                        {record.fieldofficerrole}
+                                                    </Badge>
+                                                )}
                                             </td>
                                             <td className="py-3 px-4 text-xs text-gray-600">
-                                                {record.fieldofficerrole || 'N/A'}
-                                            </td>
-                                            <td className="py-3 px-4 text-xs text-gray-600 font-medium">
-                                                {record.farmername}
-                                            </td>
-                                            <td className="py-3 px-4 text-xs text-gray-600">
-                                                <code className="text-sm bg-gray-100 px-2 py-1 rounded text-gray-700">
-                                                    {record.farmeridNo || 'N/A'}
-                                                </code>
-                                            </td>
-                                            <td className="py-3 px-4 text-xs text-gray-600">
-                                                {record.farmerphoneNo || 'N/A'}
-                                            </td>
-                                            <td className="py-3 px-4 text-xs text-gray-600">
-                                                {record.farmerlocation || 'N/A'}
-                                            </td>
-                                            <td className="py-3 px-4 text-xs text-gray-600">
-                                                <Badge variant="secondary">
-                                                    {record.farmerregion || 'N/A'}
+                                                <Badge variant="default" className="bg-green-100 text-green-800">
+                                                    {record.farmers.length} farmers
                                                 </Badge>
                                             </td>
+                                            {/* Actions cells - different for chief admin vs regular users */}
                                             <td className="py-3 px-4 text-xs text-gray-600">
                                                 <div className="flex gap-2">
                                                     <Button
                                                         variant="outline"
                                                         size="sm"
-                                                        className="h-8 w-8 p-0 hover:bg-blue-50 hover:text-blue-600 border-blue-200"
+                                                        className="h-8 px-3 hover:bg-blue-50 hover:text-blue-600 border-blue-200"
                                                         onClick={() => handleView(record)}
                                                     >
-                                                        <Eye className="h-3 w-3 text-blue-500" />
+                                                        <Eye className="h-3 w-3 mr-1" />
+                                                        View Details
                                                     </Button>
-                                                    <Button
-                                                        variant="outline"
-                                                        size="sm"
-                                                        className="h-8 w-8 p-0 hover:bg-green-50 hover:text-green-600 border-green-200"
-                                                        onClick={() => handleEdit(record)}
-                                                    >
-                                                        <Edit className="h-3 w-3 text-green-500" />
-                                                    </Button>
-                                                    <Button
-                                                        variant="outline"
-                                                        size="sm"
-                                                        className="h-8 w-8 p-0 hover:bg-red-50 hover:text-red-600 border-red-200"
-                                                        onClick={() => handleDeleteClick(record)}
-                                                    >
-                                                        <Trash2 className="h-3 w-3 text-red-500" />
-                                                    </Button>
+                                                    {userIsChiefAdmin && (
+                                                        <>
+                                                            <Button
+                                                                variant="outline"
+                                                                size="sm"
+                                                                className="h-8 w-8 p-0 hover:bg-green-50 hover:text-green-600 border-green-200"
+                                                                onClick={() => handleEdit(record)}
+                                                            >
+                                                                <Edit className="h-3 w-3 text-green-500" />
+                                                            </Button>
+                                                            <Button
+                                                                variant="outline"
+                                                                size="sm"
+                                                                className="h-8 w-8 p-0 hover:bg-red-50 hover:text-red-600 border-red-200"
+                                                                onClick={() => handleDeleteClick(record)}
+                                                            >
+                                                                <Trash2 className="h-3 w-3 text-red-500" />
+                                                            </Button>
+                                                        </>
+                                                    )}
                                                 </div>
                                             </td>
                                         </tr>
@@ -726,167 +714,277 @@ const OnboardingPage = () => {
                 </CardContent>
             </Card>
 
-            {/* Add/Edit Onboarding Dialog */}
-            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-                <DialogContent className="max-w-2xl">
-                    <DialogHeader>
-                        <DialogTitle>
-                            {onboardingForm.id ? "Edit Onboarding Record" : "Add New Onboarding"}
-                        </DialogTitle>
-                    </DialogHeader>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[60vh] overflow-y-auto">
-                        <div className="space-y-2">
-                            <Label htmlFor="topic">Topic *</Label>
-                            <Input
-                                id="topic"
-                                name="topic"
-                                value={onboardingForm.topic}
-                                onChange={handleInputChange}
-                                placeholder="Enter training topic"
-                            />
-                        </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="date">Date *</Label>
-                            <Input
-                                id="date"
-                                name="date"
-                                type="date"
-                                value={onboardingForm.date}
-                                onChange={handleInputChange}
-                            />
-                        </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="fieldofficer">Field Officer *</Label>
-                            <Input
-                                id="fieldofficer"
-                                name="fieldofficer"
-                                value={onboardingForm.fieldofficer}
-                                onChange={handleInputChange}
-                                placeholder="Enter field officer name"
-                            />
-                        </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="fieldofficerrole">Field Officer Role</Label>
-                            <Input
-                                id="fieldofficerrole"
-                                name="fieldofficerrole"
-                                value={onboardingForm.fieldofficerrole}
-                                onChange={handleInputChange}
-                                placeholder="Enter field officer role"
-                            />
-                        </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="farmername">Farmer Name *</Label>
-                            <Input
-                                id="farmername"
-                                name="farmername"
-                                value={onboardingForm.farmername}
-                                onChange={handleInputChange}
-                                placeholder="Enter farmer name"
-                            />
-                        </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="farmeridNo">Farmer ID Number</Label>
-                            <Input
-                                id="farmeridNo"
-                                name="farmeridNo"
-                                value={onboardingForm.farmeridNo}
-                                onChange={handleInputChange}
-                                placeholder="Enter farmer ID number"
-                            />
-                        </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="farmerphoneNo">Farmer Phone Number</Label>
-                            <Input
-                                id="farmerphoneNo"
-                                name="farmerphoneNo"
-                                value={onboardingForm.farmerphoneNo}
-                                onChange={handleInputChange}
-                                placeholder="Enter farmer phone number"
-                            />
-                        </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="farmerregion">Region</Label>
-                            <Input
-                                id="farmerregion"
-                                name="farmerregion"
-                                value={onboardingForm.farmerregion}
-                                onChange={handleInputChange}
-                                placeholder="Enter region"
-                            />
-                        </div>
-                        <div className="space-y-2 md:col-span-2">
-                            <Label htmlFor="farmerlocation">Location</Label>
-                            <Input
-                                id="farmerlocation"
-                                name="farmerlocation"
-                                value={onboardingForm.farmerlocation}
-                                onChange={handleInputChange}
-                                placeholder="Enter location"
-                            />
-                        </div>
-                    </div>
-                    <DialogFooter>
-                        <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
-                            Cancel
-                        </Button>
-                        <Button onClick={handleAddOnboarding} disabled={loading}>
-                            {loading ? "Saving..." : (onboardingForm.id ? "Update" : "Add")} Onboarding
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
+            {/* All edit/delete dialogs are only for chief admin */}
+            {userIsChiefAdmin && (
+                <>
+                    {/* Add/Edit Onboarding Dialog */}
+                    <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+                        <DialogContent className="max-w-4xl max-h-[90vh]">
+                            <DialogHeader>
+                                <DialogTitle>
+                                    {onboardingForm.id ? "Edit Onboarding Record" : "Add New Onboarding"}
+                                </DialogTitle>
+                            </DialogHeader>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[60vh] overflow-y-auto">
+                                <div className="space-y-2">
+                                    <Label htmlFor="topic">Topic *</Label>
+                                    <Input
+                                        id="topic"
+                                        name="topic"
+                                        value={onboardingForm.topic}
+                                        onChange={handleInputChange}
+                                        placeholder="Enter training topic"
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="date">Date *</Label>
+                                    <Input
+                                        id="date"
+                                        name="date"
+                                        type="date"
+                                        value={onboardingForm.date}
+                                        onChange={handleInputChange}
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="fieldofficer">Field Officer *</Label>
+                                    <Input
+                                        id="fieldofficer"
+                                        name="fieldofficer"
+                                        value={onboardingForm.fieldofficer}
+                                        onChange={handleInputChange}
+                                        placeholder="Enter field officer name"
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="fieldofficerrole">Field Officer Role</Label>
+                                    <Input
+                                        id="fieldofficerrole"
+                                        name="fieldofficerrole"
+                                        value={onboardingForm.fieldofficerrole}
+                                        onChange={handleInputChange}
+                                        placeholder="Enter field officer role"
+                                    />
+                                </div>
+                                
+                                {/* Farmers Section */}
+                                <div className="md:col-span-2 space-y-4">
+                                    <div className="flex justify-between items-center">
+                                        <Label className="text-lg font-semibold">Participants ({farmers.filter(f => f.name.trim() !== "").length})</Label>
+                                        <div className="flex gap-2">
+                                            <Button 
+                                                type="button" 
+                                                variant="outline" 
+                                                size="sm"
+                                                onClick={() => setIsUploadDialogOpen(true)}
+                                            >
+                                                <Upload className="w-4 h-4 mr-1" />
+                                                Upload Excel
+                                            </Button>
+                                            <Button 
+                                                type="button" 
+                                                variant="outline" 
+                                                size="sm"
+                                                onClick={addFarmer}
+                                            >
+                                                <UserPlus className="w-4 h-4 mr-1" />
+                                                Add Farmer
+                                            </Button>
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="space-y-3 max-h-64 overflow-y-auto border rounded-lg p-4">
+                                        {farmers.map((farmer, index) => (
+                                            <div key={index} className="grid grid-cols-1 md:grid-cols-5 gap-2 items-end p-3 border rounded bg-gray-50">
+                                                <div className="space-y-1">
+                                                    <Label htmlFor={`farmer-name-${index}`}>Name *</Label>
+                                                    <Input
+                                                        id={`farmer-name-${index}`}
+                                                        value={farmer.name}
+                                                        onChange={(e) => handleFarmerChange(index, 'name', e.target.value)}
+                                                        placeholder="Farmer name"
+                                                    />
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <Label htmlFor={`farmer-id-${index}`}>ID Number</Label>
+                                                    <Input
+                                                        id={`farmer-id-${index}`}
+                                                        value={farmer.idNo}
+                                                        onChange={(e) => handleFarmerChange(index, 'idNo', e.target.value)}
+                                                        placeholder="ID number"
+                                                    />
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <Label htmlFor={`farmer-phone-${index}`}>Phone</Label>
+                                                    <Input
+                                                        id={`farmer-phone-${index}`}
+                                                        value={farmer.phoneNo}
+                                                        onChange={(e) => handleFarmerChange(index, 'phoneNo', e.target.value)}
+                                                        placeholder="Phone number"
+                                                    />
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <Label htmlFor={`farmer-location-${index}`}>Location</Label>
+                                                    <Input
+                                                        id={`farmer-location-${index}`}
+                                                        value={farmer.location}
+                                                        onChange={(e) => handleFarmerChange(index, 'location', e.target.value)}
+                                                        placeholder="Location"
+                                                    />
+                                                </div>
+                                                <div className="flex gap-2">
+                                                    <div className="space-y-1 flex-1">
+                                                        <Label htmlFor={`farmer-region-${index}`}>Region</Label>
+                                                        <Input
+                                                            id={`farmer-region-${index}`}
+                                                            value={farmer.region}
+                                                            onChange={(e) => handleFarmerChange(index, 'region', e.target.value)}
+                                                            placeholder="Region"
+                                                        />
+                                                    </div>
+                                                    {farmers.length > 1 && (
+                                                        <Button
+                                                            type="button"
+                                                            variant="outline"
+                                                            size="sm"
+                                                            className="h-10 w-10 p-0 hover:bg-red-50 hover:text-red-600 border-red-200"
+                                                            onClick={() => removeFarmer(index)}
+                                                        >
+                                                            <X className="h-4 w-4" />
+                                                        </Button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                            <DialogFooter>
+                                <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+                                    Cancel
+                                </Button>
+                                <Button onClick={handleAddOnboarding} disabled={loading}>
+                                    {loading ? "Saving..." : (onboardingForm.id ? "Update" : "Add")} Onboarding
+                                </Button>
+                            </DialogFooter>
+                        </DialogContent>
+                    </Dialog>
 
-            {/* Delete Confirmation Dialog */}
-            <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-                <DialogContent>
+                    {/* Delete Confirmation Dialog */}
+                    <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+                        <DialogContent>
+                            <DialogHeader>
+                                <DialogTitle>Confirm Deletion</DialogTitle>
+                                <DialogDescription>
+                                    Are you sure you want to delete the onboarding record for{" "}
+                                    <strong>{selectedRecord?.topic}</strong> on {selectedRecord?.date.toLocaleDateString()}? 
+                                    This will remove {selectedRecord?.farmers.length} farmer records. This action cannot be undone.
+                                </DialogDescription>
+                            </DialogHeader>
+                            <DialogFooter>
+                                <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>
+                                    Cancel
+                                </Button>
+                                <Button variant="destructive" onClick={handleDeleteConfirm} disabled={loading}>
+                                    {loading ? "Deleting..." : "Delete"}
+                                </Button>
+                            </DialogFooter>
+                        </DialogContent>
+                    </Dialog>
+
+                    {/* Upload Excel Dialog */}
+                    <Dialog open={isUploadDialogOpen} onOpenChange={setIsUploadDialogOpen}>
+                        <DialogContent>
+                            <DialogHeader>
+                                <DialogTitle>Upload Farmers Excel</DialogTitle>
+                                <DialogDescription>
+                                    Upload an Excel file containing farmer data. The farmers will be added to the current onboarding session.
+                                    Download the template to ensure correct format.
+                                </DialogDescription>
+                            </DialogHeader>
+                            <div className="space-y-4">
+                                <Button onClick={downloadTemplate} variant="outline">
+                                    <Download className="w-4 h-4 mr-2" />
+                                    Download Template
+                                </Button>
+                                <Input
+                                    ref={fileInputRef}
+                                    type="file"
+                                    accept=".xlsx,.xls,.csv"
+                                    onChange={handleExcelUpload}
+                                    disabled={loading}
+                                />
+                                <p className="text-sm text-muted-foreground">
+                                    Supported formats: .xlsx, .xls, .csv. File should contain columns: name, idNo, phoneNo, location, region
+                                </p>
+                            </div>
+                            <DialogFooter>
+                                <Button variant="outline" onClick={() => setIsUploadDialogOpen(false)}>
+                                    Cancel
+                                </Button>
+                            </DialogFooter>
+                        </DialogContent>
+                    </Dialog>
+                </>
+            )}
+
+            {/* View Participants Dialog - Available for all users */}
+            <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
+                <DialogContent className="max-w-4xl max-h-[80vh]">
                     <DialogHeader>
-                        <DialogTitle>Confirm Deletion</DialogTitle>
+                        <DialogTitle>Onboarding Session Details</DialogTitle>
                         <DialogDescription>
-                            Are you sure you want to delete the onboarding record for{" "}
-                            <strong>{selectedRecord?.farmername}</strong>? This action cannot be undone.
+                            {selectedRecord && (
+                                <div className="grid grid-cols-2 gap-4 mt-2">
+                                    <div>
+                                        <strong>Date:</strong> {selectedRecord.date.toLocaleDateString()}
+                                    </div>
+                                    <div>
+                                        <strong>Topic:</strong> {selectedRecord.topic}
+                                    </div>
+                                    <div>
+                                        <strong>Field Officer:</strong> {selectedRecord.fieldofficer}
+                                    </div>
+                                    <div>
+                                        <strong>Officer Role:</strong> {selectedRecord.fieldofficerrole || 'N/A'}
+                                    </div>
+                                </div>
+                            )}
                         </DialogDescription>
                     </DialogHeader>
-                    <DialogFooter>
-                        <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>
-                            Cancel
-                        </Button>
-                        <Button variant="destructive" onClick={handleDeleteConfirm} disabled={loading}>
-                            {loading ? "Deleting..." : "Delete"}
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
-
-            {/* Upload Excel Dialog */}
-            <Dialog open={isUploadDialogOpen} onOpenChange={setIsUploadDialogOpen}>
-                <DialogContent>
-                    <DialogHeader>
-                        <DialogTitle>Upload Excel File</DialogTitle>
-                        <DialogDescription>
-                            Upload an Excel file containing multiple onboarding records. 
-                            Download the template to ensure correct format.
-                        </DialogDescription>
-                    </DialogHeader>
-                    <div className="space-y-4">
-                        <Button onClick={downloadTemplate} variant="outline">
-                            <Download className="w-4 h-4 mr-2" />
-                            Download Template
-                        </Button>
-                        <Input
-                            ref={fileInputRef}
-                            type="file"
-                            accept=".xlsx,.xls,.csv"
-                            onChange={handleExcelUpload}
-                            disabled={loading}
-                        />
-                        <p className="text-sm text-muted-foreground">
-                            Supported formats: .xlsx, .xls, .csv
-                        </p>
+                    <div className="max-h-96 overflow-y-auto">
+                        <table className="w-full border-collapse border border-gray-300 text-sm">
+                            <thead>
+                                <tr className="bg-gray-100">
+                                    <th className="text-left py-2 px-3 font-medium text-gray-600 border">Name</th>
+                                    <th className="text-left py-2 px-3 font-medium text-gray-600 border">ID Number</th>
+                                    <th className="text-left py-2 px-3 font-medium text-gray-600 border">Phone</th>
+                                    <th className="text-left py-2 px-3 font-medium text-gray-600 border">Location</th>
+                                    <th className="text-left py-2 px-3 font-medium text-gray-600 border">Region</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {selectedRecord?.farmers.map((farmer, index) => (
+                                    <tr key={index} className="border-b hover:bg-gray-50">
+                                        <td className="py-2 px-3 border text-gray-700">{farmer.name}</td>
+                                        <td className="py-2 px-3 border text-gray-700">
+                                            <code className="bg-gray-100 px-2 py-1 rounded text-sm">
+                                                {farmer.idNo || 'N/A'}
+                                            </code>
+                                        </td>
+                                        <td className="py-2 px-3 border text-gray-700">{farmer.phoneNo || 'N/A'}</td>
+                                        <td className="py-2 px-3 border text-gray-700">{farmer.location || 'N/A'}</td>
+                                        <td className="py-2 px-3 border text-gray-700">
+                                            <Badge variant="secondary">{farmer.region || 'N/A'}</Badge>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
                     </div>
                     <DialogFooter>
-                        <Button variant="outline" onClick={() => setIsUploadDialogOpen(false)}>
-                            Cancel
+                        <Button variant="outline" onClick={() => setIsViewDialogOpen(false)}>
+                            Close
                         </Button>
                     </DialogFooter>
                 </DialogContent>

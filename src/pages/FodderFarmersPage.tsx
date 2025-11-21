@@ -11,6 +11,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Download, Users, MapPin, Eye, Calendar, Sprout, Globe, LayoutGrid, Edit, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { isChiefAdmin } from "./onboardingpage";
 
 // Types
 interface FodderFarmer {
@@ -142,6 +143,10 @@ const FodderFarmersPage = () => {
     hasNext: false,
     hasPrev: false
   });
+
+  const userIsChiefAdmin = useMemo(() => {
+    return isChiefAdmin(userRole);
+  }, [userRole]);
 
   // Data fetching
   const fetchAllData = useCallback(async () => {
@@ -408,12 +413,6 @@ const FodderFarmersPage = () => {
     setPagination(prev => ({ ...prev, page: newPage }));
   };
 
-  const getCurrentPageRecords = useCallback(() => {
-    const startIndex = (pagination.page - 1) * pagination.limit;
-    const endIndex = startIndex + pagination.limit;
-    return filteredFodder.slice(startIndex, endIndex);
-  }, [filteredFodder, pagination.page, pagination.limit]);
-
   const handleSelectRecord = (recordId: string) => {
     setSelectedRecords(prev =>
       prev.includes(recordId)
@@ -472,6 +471,12 @@ const FodderFarmersPage = () => {
     console.log("Unique models:", models);
     return models;
   }, [allFodder]);
+
+  const getCurrentPageRecords = useCallback(() => {
+    const startIndex = (pagination.page - 1) * pagination.limit;
+    const endIndex = startIndex + pagination.limit;
+    return filteredFodder.slice(startIndex, endIndex);
+  }, [filteredFodder, pagination.page, pagination.limit]);
 
   const currentPageRecords = useMemo(getCurrentPageRecords, [getCurrentPageRecords]);
 
@@ -636,27 +641,33 @@ const FodderFarmersPage = () => {
             >
               <Eye className="h-4 w-4 text-green-500" />
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => handleEdit(record)}
-              className="h-8 w-8 p-0 hover:bg-blue-50 hover:text-blue-600 border-blue-200"
-            >
-              <Edit className="h-4 w-4 text-blue-500" />
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => handleDelete(record)}
-              className="h-8 w-8 p-0 hover:bg-red-50 hover:text-red-600 border-red-200"
-            >
-              <Trash2 className="h-4 w-4 text-red-500" />
-            </Button>
+            {/* Edit button - only for chief admin */}
+            {userIsChiefAdmin && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleEdit(record)}
+                className="h-8 w-8 p-0 hover:bg-blue-50 hover:text-blue-600 border-blue-200"
+              >
+                <Edit className="h-4 w-4 text-blue-500" />
+              </Button>
+            )}
+            {/* Delete button - only for chief admin */}
+            {userIsChiefAdmin && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleDelete(record)}
+                className="h-8 w-8 p-0 hover:bg-red-50 hover:text-red-600 border-red-200"
+              >
+                <Trash2 className="h-4 w-4 text-red-500" />
+              </Button>
+            )}
           </div>
         </td>
       </tr>
     );
-  }, [selectedRecords, handleSelectRecord, openViewDialog, handleEdit, handleDelete]);
+  }, [selectedRecords, handleSelectRecord, openViewDialog, handleEdit, handleDelete, userIsChiefAdmin]);
 
   return (
     <div className="space-y-6">
@@ -685,14 +696,17 @@ const FodderFarmersPage = () => {
           >
             This Month
           </Button>
-          <Button 
-            onClick={handleExport} 
-            disabled={exportLoading || filteredFodder.length === 0}
-            className="bg-gradient-to-r from-green-600 to-emerald-700 hover:from-green-700 hover:to-emerald-800 text-white shadow-md text-xs"
-          >
-            <Download className="h-4 w-4 mr-2" />
-            {exportLoading ? "Exporting..." : `Export (${filteredFodder.length})`}
-          </Button>
+          {/* Export button - only for chief admin */}
+          {userIsChiefAdmin && (
+            <Button 
+              onClick={handleExport} 
+              disabled={exportLoading || filteredFodder.length === 0}
+              className="bg-gradient-to-r from-green-600 to-emerald-700 hover:from-green-700 hover:to-emerald-800 text-white shadow-md text-xs"
+            >
+              <Download className="h-4 w-4 mr-2" />
+              {exportLoading ? "Exporting..." : `Export (${filteredFodder.length})`}
+            </Button>
+          )}
         </div>
       </div>
 

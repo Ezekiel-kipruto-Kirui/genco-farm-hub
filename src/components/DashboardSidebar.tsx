@@ -1,5 +1,4 @@
 import {
-
   Wheat,
   Building2,
   GraduationCap,
@@ -33,11 +32,13 @@ import {
 
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { useAuth } from "@/contexts/AuthContext";
+import { isChiefAdmin } from "@/pages/onboardingpage";
 
-const menuItems = [
+// Base menu items without User Management
+const baseMenuItems = [
   {
     title: "Livestock Farmers",
-    icon: Beef, // Changed from Sprout to Beef
+    icon: Beef,
     subItems: [
       { title: "Dashboard", url: "/dashboard/livestock/analytics", icon: BarChart3 },
       { title: "Farmer Data", url: "/dashboard/livestock", icon: Database },
@@ -81,22 +82,25 @@ const menuItems = [
     icon: UserPlus,
     url: "/dashboard/onboarding"
   },
-  { 
-    title: "User Management",
-    icon: Users,
-    url: "/dashboard/users"
-  },
-  { 
-    title: "Uploads",
-    icon: Upload,
-    url: "/dashboard/uploads"
-  },
 ];
 
 export function DashboardSidebar() {
   const { state } = useSidebar();
   const { userRole } = useAuth();
   const collapsed = state === "collapsed";
+  
+  const userIsChiefAdmin = isChiefAdmin(userRole);
+
+  // Build menu items dynamically based on user role
+  const menuItems = [
+    ...baseMenuItems,
+    // Conditionally add User Management for chief admin only
+    ...(userIsChiefAdmin ? [{
+      title: "User Management",
+      icon: Users,
+      url: "/dashboard/users"
+    }] : [])
+  ];
 
   return (
     <Sidebar className={collapsed ? "w-14" : "w-64"} collapsible="icon">

@@ -12,6 +12,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Download, Users, Beef, Edit, Trash2, GraduationCap, Eye, MapPin, Calendar } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { isChiefAdmin } from "./onboardingpage";
 
 // Types
 interface Farmer {
@@ -237,6 +238,9 @@ const LivestockFarmersPage = () => {
     trained: false,
     trainingDate: ""
   });
+ const userIsChiefAdmin = useMemo(() => {
+        return isChiefAdmin(userRole);
+    }, [userRole]);
 
   // Data fetching
   const fetchAllData = useCallback(async () => {
@@ -847,7 +851,8 @@ const LivestockFarmersPage = () => {
             >
               <Eye className="h-3 w-3 text-green-500" />
             </Button>
-            <Button
+             {isChiefAdmin(userRole) &&(
+              <Button
               variant="outline"
               size="sm"
               onClick={() => openEditDialog(farmer)}
@@ -855,14 +860,16 @@ const LivestockFarmersPage = () => {
             >
               <Edit className="h-3 w-3 text-blue-500" />
             </Button>
-            <Button
+           
+             )}
+             {isChiefAdmin(userRole) &&( <Button
               variant="outline"
               size="sm"
               onClick={() => handleSelectFarmer(farmer.id)}
               className="h-8 w-8 p-0 hover:bg-red-50 hover:text-red-600 border-red-200"
             >
               <Trash2 className="h-3 w-3 text-red-500" />
-            </Button>
+            </Button>)}
           </div>
         </td>
       </tr>
@@ -986,14 +993,16 @@ const LivestockFarmersPage = () => {
           >
             This Month
           </Button>
-          <Button 
+
+           {isChiefAdmin(userRole) &&( <Button 
             onClick={handleExport} 
             disabled={exportLoading || filteredFarmers.length === 0}
             className="bg-gradient-to-r from-blue-800 to-purple-600 hover:from-green-600 hover:to-emerald-700 text-white shadow-md text-xs"
           >
             <Download className="h-4 w-4 mr-2" />
             {exportLoading ? "Exporting..." : `Export (${filteredFarmers.length})`}
-          </Button>
+          </Button>)}
+         
         </div>
       </div>
 

@@ -12,6 +12,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Download, Users, BookOpen, Edit, Trash2, Calendar, Eye, X, MapPin, GraduationCap } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { isChiefAdmin } from "./onboardingpage";
 
 // Types
 interface TrainingRecord {
@@ -139,6 +140,9 @@ const CapacityBuildingPage = () => {
   const [editingRecord, setEditingRecord] = useState<TrainingRecord | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   
+     const userIsChiefAdmin = useMemo(() => {
+        return isChiefAdmin(userRole);
+    }, [userRole]);
   const currentMonth = useMemo(getCurrentMonthDates, []);
 
   // Separate search state with debouncing

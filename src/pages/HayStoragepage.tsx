@@ -12,6 +12,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Download, Warehouse, MapPin, Eye, Calendar, Building, Globe, Users, DollarSign, Package, Archive, Edit, Save, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { isChiefAdmin } from "./onboardingpage";
 
 // Types
 interface Infrastructure {
@@ -150,7 +151,9 @@ const HayStoragePage = () => {
     hasNext: false,
     hasPrev: false
   });
-
+const userIsChiefAdmin = useMemo(() => {
+        return isChiefAdmin(userRole);
+    }, [userRole]);
   // Data fetching
   const fetchAllData = useCallback(async () => {
     try {
@@ -634,14 +637,15 @@ const HayStoragePage = () => {
             >
               <Eye className="h-4 w-4 text-blue-500" />
             </Button>
-            <Button
+             {isChiefAdmin(userRole) &&( <Button
               variant="outline"
               size="sm"
               onClick={() => openEditDialog(record)}
               className="h-8 w-8 p-0 hover:bg-green-50 hover:text-green-600 border-green-200"
             >
               <Edit className="h-4 w-4 text-green-500" />
-            </Button>
+            </Button>)}
+           
           </div>
         </td>
       </tr>
@@ -675,14 +679,16 @@ const HayStoragePage = () => {
           >
             This Month
           </Button>
-          <Button 
+           {isChiefAdmin(userRole) &&(  
+            <Button 
             onClick={handleExport} 
             disabled={exportLoading || filteredInfrastructure.length === 0}
             className="bg-gradient-to-r from-blue-600 to-purple-700 hover:from-blue-700 hover:to-purple-800 text-white shadow-md text-xs"
           >
             <Download className="h-4 w-4 mr-2" />
             {exportLoading ? "Exporting..." : `Export (${filteredInfrastructure.length})`}
-          </Button>
+          </Button>)}
+        
         </div>
       </div>
 

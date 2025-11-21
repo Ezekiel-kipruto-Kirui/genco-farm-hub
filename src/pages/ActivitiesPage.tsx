@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { collection, getDocs, addDoc, query, orderBy, deleteDoc, doc, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,6 +7,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import {isChiefAdmin} from "./onboardingpage";
+
 import { 
   Users, 
   MapPin, 
@@ -65,6 +67,12 @@ const ActivitiesPage = () => {
     subcounty: "",
     location: "",
   });
+  const { userRole } = useAuth();
+     const userIsChiefAdmin = useMemo(() => {
+      
+
+        return isChiefAdmin(userRole);
+    }, [userRole]);
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [searchTerm, setSearchTerm] = useState("");
   const { toast } = useToast();
@@ -298,10 +306,11 @@ const ActivitiesPage = () => {
           </div>
           <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
             <DialogTrigger asChild>
-              <Button className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white">
+              {isChiefAdmin(userRole) &&(<Button className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white">
                 <Plus className="h-4 w-4 mr-2" />
                 Schedule Activity
-              </Button>
+              </Button>)}
+              
             </DialogTrigger>
             <DialogContent className="sm:max-w-[700px] bg-white rounded-2xl border-0 shadow-2xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
@@ -535,6 +544,7 @@ const ActivitiesPage = () => {
                       <th className="p-4 text-left font-semibold text-slate-700 text-sm">County</th>
                       <th className="p-4 text-left font-semibold text-slate-700 text-sm">Participants</th>
                       <th className="p-4 text-left font-semibold text-slate-700 text-sm">Status</th>
+
                       <th className="p-4 text-left font-semibold text-slate-700 text-sm">Actions</th>
                     </tr>
                   </thead>
@@ -584,7 +594,8 @@ const ActivitiesPage = () => {
                           {getStatusBadge(activity.status)}
                         </td>
                         <td className="p-4">
-                          <div className="flex gap-2">
+                           {isChiefAdmin(userRole) && (<div className="flex gap-2">
+                           
                             <Button
                               size="sm"
                               onClick={() => openEditDialog(activity)}
@@ -616,7 +627,8 @@ const ActivitiesPage = () => {
                                 </DropdownMenuItem>
                               </DropdownMenuContent>
                             </DropdownMenu>
-                          </div>
+                          </div>)}
+                          
                         </td>
                       </tr>
                     ))}

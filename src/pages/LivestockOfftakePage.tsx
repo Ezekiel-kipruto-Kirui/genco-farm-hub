@@ -12,6 +12,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Download, Users, MapPin, Eye, Calendar, Scale, Phone, CreditCard, Edit, Trash2, Weight } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { isChiefAdmin } from "./onboardingpage";
 
 // Types
 interface OfftakeData {
@@ -225,6 +226,10 @@ const LivestockOfftakePage = () => {
     carcassWeights: [],
     prices: []
   });
+
+ const userIsChiefAdmin = useMemo(() => {
+        return isChiefAdmin(userRole);
+    }, [userRole]);
 
   // Data fetching - memoized to prevent unnecessary re-fetches
   const fetchAllData = useCallback(async () => {
@@ -987,7 +992,8 @@ const applyFilters = useCallback(() => {
             >
               <Eye className="h-4 w-4 text-green-500" />
             </Button>
-            <Button
+ {isChiefAdmin(userRole) &&(
+              <Button
               variant="outline"
               size="sm"
               onClick={() => openEditDialog(record)}
@@ -995,14 +1001,18 @@ const applyFilters = useCallback(() => {
             >
               <Edit className="h-4 w-4 text-orange-500" />
             </Button>
-            <Button
+ )}
+ {isChiefAdmin(userRole) &&(
+        <Button
               variant="outline"
               size="sm"
               onClick={() => handleSelectRecord(record.id)}
               className="h-8 w-8 p-0 hover:bg-red-100 hover:text-red-600 border-red-200"
             >
               <Trash2 className="h-4 w-4 text-red-500" />
-            </Button>
+            </Button>     
+ )}
+            
           </div>
         </td>
       </tr>
@@ -1036,7 +1046,8 @@ const applyFilters = useCallback(() => {
           >
             This Month
           </Button>
-          <Button 
+        {isChiefAdmin(userRole) &&(
+               <Button 
             onClick={handleExport} 
             disabled={exportLoading || filteredOfftake.length === 0}
             className="bg-gradient-to-r from-blue-800 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white shadow-md text-xs"
@@ -1044,6 +1055,7 @@ const applyFilters = useCallback(() => {
             <Download className="h-4 w-4 mr-2" />
             {exportLoading ? "Exporting..." : `Export (${filteredOfftake.length})`}
           </Button>
+ )}
         </div>
       </div>
 

@@ -10,6 +10,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Download, User, Phone, MapPin, Globe, Calendar, DollarSign, Eye, Edit, Save, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { isChiefAdmin } from "./onboardingpage";
 
 // Types
 interface FodderOfftake {
@@ -154,7 +155,9 @@ const FodderOfftakePage = () => {
     hasNext: false,
     hasPrev: false
   });
-
+const userIsChiefAdmin = useMemo(() => {
+        return isChiefAdmin(userRole);
+    }, [userRole]);
   // Data fetching
   const fetchAllData = useCallback(async () => {
     try {
@@ -627,14 +630,14 @@ const FodderOfftakePage = () => {
             >
               <Eye className="h-4 w-4 text-blue-500" />
             </Button>
-            <Button
+            {isChiefAdmin(userRole) &&( <Button
               variant="outline"
               size="sm"
               onClick={() => openEditDialog(record)}
               className="h-10 w-10 p-0 hover:bg-green-300 hover:text-green-600 border-white"
             >
               <Edit className="h-4 w-4 text-green-500" />
-            </Button>
+            </Button>)}
           </div>
         </td>
       </tr>
@@ -669,14 +672,16 @@ const FodderOfftakePage = () => {
           >
             This Month
           </Button>
-          <Button 
+
+           {isChiefAdmin(userRole) && (  <Button 
             onClick={handleExport} 
             disabled={exportLoading || filteredFodderOfftake.length === 0}
             className="bg-gradient-to-r from-blue-600 to-purple-700 hover:from-blue-700 hover:to-purple-800 text-white shadow-md text-xs"
           >
             <Download className="h-4 w-4 mr-2" />
             {exportLoading ? "Exporting..." : `Export (${filteredFodderOfftake.length})`}
-          </Button>
+          </Button>)}
+        
         </div>
       </div>
 
