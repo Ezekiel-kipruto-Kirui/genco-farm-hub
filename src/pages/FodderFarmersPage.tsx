@@ -653,7 +653,7 @@ const FodderFarmersPage = () => {
               </Button>
             )}
             {/* Delete button - only for chief admin */}
-            {userIsChiefAdmin && (
+            {isChiefAdmin(userRole)  && (
               <Button
                 variant="outline"
                 size="sm"

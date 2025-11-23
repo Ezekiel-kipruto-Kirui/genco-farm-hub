@@ -515,7 +515,7 @@ const DashboardOverview = () => {
                       <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-500 rounded-lg flex items-center justify-center shadow-lg mr-3">
                         <Activity className="w-4 h-4 text-white" />
                       </div>
-                      <h3 className="text-lg font-semibold text-slate-900">Recent Activities</h3>
+                      <h3 className="text-lg font-semibold text-slate-900">Recent Activities </h3>
                     </div>
                     <Link to="/dashboard/activities">
                       <Button variant="ghost" size="sm" className="text-slate-600 hover:text-slate-900">
