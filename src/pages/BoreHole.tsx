@@ -591,7 +591,8 @@ const BoreholePage = () => {
           >
             This Month
           </Button>
-          <Button 
+          {isChiefAdmin(userRole) && (
+             <Button 
             onClick={handleExport} 
             disabled={exportLoading || filteredBoreholes.length === 0}
             className="bg-gradient-to-r from-blue-600 to-cyan-700 hover:from-blue-700 hover:to-cyan-800 text-white shadow-md text-xs"
@@ -599,6 +600,9 @@ const BoreholePage = () => {
             <Download className="h-4 w-4 mr-2" />
             {exportLoading ? "Exporting..." : `Export (${filteredBoreholes.length})`}
           </Button>
+          )}
+
+         
         </div>
       </div>
 

@@ -766,7 +766,8 @@ const CapacityBuildingPage = () => {
           >
             This Month
           </Button>
-          <Button 
+     {isChiefAdmin(userRole) && (
+       <Button 
             onClick={handleExport} 
             disabled={exportLoading || filteredRecords.length === 0}
             className="bg-gradient-to-r from-blue-800 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white shadow-md text-xs"
@@ -774,6 +775,9 @@ const CapacityBuildingPage = () => {
             <Download className="h-4 w-4 mr-2" />
             {exportLoading ? "Exporting..." : `Export (${filteredRecords.length})`}
           </Button>
+     )}
+
+         
         </div>
       </div>
 

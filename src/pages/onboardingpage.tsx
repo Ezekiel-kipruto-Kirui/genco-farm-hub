@@ -21,12 +21,16 @@ interface FarmerData {
     region: string;
 }
 
+interface StaffData {
+    name: string;
+    role: string;
+}
+
 interface OnboardingData {
     id?: string;
     date: Date;
     topic: string;
-    fieldofficer: string;
-    fieldofficerrole: string;
+    staff: StaffData[];
     farmers: FarmerData[];
     createdAt?: Date;
 }
@@ -54,9 +58,10 @@ const OnboardingPage = () => {
         id: "",
         topic: "",
         date: "",
-        fieldofficer: "",
-        fieldofficerrole: "",
     });
+    const [staff, setStaff] = useState<StaffData[]>([
+        { name: "", role: "" }
+    ]);
     const [farmers, setFarmers] = useState<FarmerData[]>([
         { name: "", idNo: "", phoneNo: "", location: "", region: "" }
     ]);
@@ -135,8 +140,7 @@ const OnboardingPage = () => {
                     id: doc.id,
                     date: docData.date?.toDate() || new Date(),
                     topic: docData.topic || "",
-                    fieldofficer: docData.fieldofficer || "",
-                    fieldofficerrole: docData.fieldofficerrole || "",
+                    staff: docData.staff || [],
                     farmers: docData.farmers || [],
                     createdAt: docData.createdAt?.toDate() || new Date()
                 } as OnboardingData;
@@ -213,6 +217,25 @@ const OnboardingPage = () => {
         }));
     };
 
+    const handleStaffChange = (index: number, field: keyof StaffData, value: string) => {
+        const updatedStaff = [...staff];
+        updatedStaff[index] = {
+            ...updatedStaff[index],
+            [field]: value
+        };
+        setStaff(updatedStaff);
+    };
+
+    const addStaff = () => {
+        setStaff(prev => [...prev, { name: "", role: "" }]);
+    };
+
+    const removeStaff = (index: number) => {
+        if (staff.length > 1) {
+            setStaff(prev => prev.filter((_, i) => i !== index));
+        }
+    };
+
     const handleFarmerChange = (index: number, field: keyof FarmerData, value: string) => {
         const updatedFarmers = [...farmers];
         updatedFarmers[index] = {
@@ -244,18 +267,28 @@ const OnboardingPage = () => {
             id: "",
             topic: "",
             date: "",
-            fieldofficer: "",
-            fieldofficerrole: "",
         });
+        setStaff([{ name: "", role: "" }]);
         setFarmers([{ name: "", idNo: "", phoneNo: "", location: "", region: "" }]);
     };
 
     const handleAddOnboarding = async () => {
         try {
-            if (!onboardingForm.topic || !onboardingForm.date || !onboardingForm.fieldofficer) {
+            if (!onboardingForm.topic || !onboardingForm.date) {
                 toast({
                     title: "Validation Error",
                     description: "Please fill in all required fields",
+                    variant: "destructive",
+                });
+                return;
+            }
+
+            // Validate staff data
+            const validStaff = staff.filter(staffMember => staffMember.name.trim() !== "");
+            if (validStaff.length === 0) {
+                toast({
+                    title: "Validation Error",
+                    description: "Please add at least one staff member",
                     variant: "destructive",
                 });
                 return;
@@ -277,6 +310,7 @@ const OnboardingPage = () => {
             const onboardingData = {
                 ...onboardingForm,
                 date: new Date(onboardingForm.date),
+                staff: validStaff,
                 farmers: validFarmers,
                 createdAt: new Date()
             };
@@ -320,9 +354,8 @@ const OnboardingPage = () => {
             id: record.id || "",
             topic: record.topic,
             date: record.date.toISOString().split('T')[0],
-            fieldofficer: record.fieldofficer,
-            fieldofficerrole: record.fieldofficerrole,
         });
+        setStaff(record.staff.length > 0 ? record.staff : [{ name: "", role: "" }]);
         setFarmers(record.farmers.length > 0 ? record.farmers : [{ name: "", idNo: "", phoneNo: "", location: "", region: "" }]);
         setIsDialogOpen(true);
     };
@@ -451,8 +484,7 @@ const OnboardingPage = () => {
                 record.farmers.map(farmer => ({
                     Date: record.date.toLocaleDateString(),
                     Topic: record.topic,
-                    'Field Officer': record.fieldofficer,
-                    'Field Officer Role': record.fieldofficerrole,
+                    'Staff Members': record.staff.map(s => `${s.name} (${s.role})`).join(', '),
                     'Farmer Name': farmer.name,
                     'Farmer ID': farmer.idNo,
                     'Phone Number': farmer.phoneNo,
@@ -497,6 +529,13 @@ const OnboardingPage = () => {
     const openAddDialog = () => {
         resetForm();
         setIsDialogOpen(true);
+    };
+
+    // Format staff display for table
+    const formatStaffDisplay = (staffList: StaffData[]): string => {
+        if (staffList.length === 0) return "No staff";
+        if (staffList.length === 1) return `${staffList[0].name} (${staffList[0].role})`;
+        return `${staffList[0].name} +${staffList.length - 1} more`;
     };
 
     // StatsCard component
@@ -643,7 +682,7 @@ const OnboardingPage = () => {
                                     <tr className="bg-blue-100 p-1 px-3">
                                         <th className="text-left py-3 px-4 font-medium text-gray-600">Date</th>
                                         <th className="text-left py-3 px-4 font-medium text-gray-600">Topic</th>
-                                        <th className="text-left py-3 px-4 font-medium text-gray-600">Field Officer</th>
+                                        <th className="text-left py-3 px-4 font-medium text-gray-600">Staff Members</th>
                                         <th className="text-left py-3 px-4 font-medium text-gray-600">Participants</th>
                                         {/* Actions column for all users */}
                                         <th className="text-left py-3 px-4 font-medium text-gray-600">Actions</th>
@@ -659,12 +698,14 @@ const OnboardingPage = () => {
                                                 {record.topic}
                                             </td>
                                             <td className="py-3 px-4 text-xs text-gray-600">
-                                                {record.fieldofficer}
-                                                {record.fieldofficerrole && (
-                                                    <Badge variant="secondary" className="ml-2 text-xs">
-                                                        {record.fieldofficerrole}
-                                                    </Badge>
-                                                )}
+                                                <div className="flex flex-col gap-1">
+                                                    <span>{formatStaffDisplay(record.staff)}</span>
+                                                    {record.staff.length > 1 && (
+                                                        <Badge variant="secondary" className="text-xs w-fit">
+                                                            {record.staff.length} staff members
+                                                        </Badge>
+                                                    )}
+                                                </div>
                                             </td>
                                             <td className="py-3 px-4 text-xs text-gray-600">
                                                 <Badge variant="default" className="bg-green-100 text-green-800">
@@ -719,56 +760,94 @@ const OnboardingPage = () => {
                 <>
                     {/* Add/Edit Onboarding Dialog */}
                     <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-                        <DialogContent className="max-w-4xl max-h-[90vh]">
+                        <DialogContent className="max-w-6xl max-h-[90vh]">
                             <DialogHeader>
                                 <DialogTitle>
                                     {onboardingForm.id ? "Edit Onboarding Record" : "Add New Onboarding"}
                                 </DialogTitle>
                             </DialogHeader>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[60vh] overflow-y-auto">
-                                <div className="space-y-2">
-                                    <Label htmlFor="topic">Topic *</Label>
-                                    <Input
-                                        id="topic"
-                                        name="topic"
-                                        value={onboardingForm.topic}
-                                        onChange={handleInputChange}
-                                        placeholder="Enter training topic"
-                                    />
-                                </div>
-                                <div className="space-y-2">
-                                    <Label htmlFor="date">Date *</Label>
-                                    <Input
-                                        id="date"
-                                        name="date"
-                                        type="date"
-                                        value={onboardingForm.date}
-                                        onChange={handleInputChange}
-                                    />
-                                </div>
-                                <div className="space-y-2">
-                                    <Label htmlFor="fieldofficer">Field Officer *</Label>
-                                    <Input
-                                        id="fieldofficer"
-                                        name="fieldofficer"
-                                        value={onboardingForm.fieldofficer}
-                                        onChange={handleInputChange}
-                                        placeholder="Enter field officer name"
-                                    />
-                                </div>
-                                <div className="space-y-2">
-                                    <Label htmlFor="fieldofficerrole">Field Officer Role</Label>
-                                    <Input
-                                        id="fieldofficerrole"
-                                        name="fieldofficerrole"
-                                        value={onboardingForm.fieldofficerrole}
-                                        onChange={handleInputChange}
-                                        placeholder="Enter field officer role"
-                                    />
+                            <div className="grid grid-cols-1 gap-6 max-h-[70vh] overflow-y-auto">
+                                {/* Basic Information */}
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div className="space-y-2">
+                                        <Label htmlFor="topic">Topic *</Label>
+                                        <Input
+                                            id="topic"
+                                            name="topic"
+                                            value={onboardingForm.topic}
+                                            onChange={handleInputChange}
+                                            placeholder="Enter training topic"
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label htmlFor="date">Date *</Label>
+                                        <Input
+                                            id="date"
+                                            name="date"
+                                            type="date"
+                                            value={onboardingForm.date}
+                                            onChange={handleInputChange}
+                                        />
+                                    </div>
                                 </div>
                                 
+                                {/* Staff Section */}
+                                <div className="space-y-4">
+                                    <div className="flex justify-between items-center">
+                                        <Label className="text-lg font-semibold">Staff Members ({staff.filter(s => s.name.trim() !== "").length})</Label>
+                                        <Button 
+                                            type="button" 
+                                            variant="outline" 
+                                            size="sm"
+                                            onClick={addStaff}
+                                        >
+                                            <UserPlus className="w-4 h-4 mr-1" />
+                                            Add Staff
+                                        </Button>
+                                    </div>
+                                    
+                                    <div className="space-y-3 max-h-48 overflow-y-auto border rounded-lg p-4 bg-gray-50">
+                                        {staff.map((staffMember, index) => (
+                                            <div key={index} className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end p-3 border rounded bg-white">
+                                                <div className="space-y-1">
+                                                    <Label htmlFor={`staff-name-${index}`}>Staff Name *</Label>
+                                                    <Input
+                                                        id={`staff-name-${index}`}
+                                                        value={staffMember.name}
+                                                        onChange={(e) => handleStaffChange(index, 'name', e.target.value)}
+                                                        placeholder="Enter staff name"
+                                                    />
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <Label htmlFor={`staff-role-${index}`}>Staff Role *</Label>
+                                                    <Input
+                                                        id={`staff-role-${index}`}
+                                                        value={staffMember.role}
+                                                        onChange={(e) => handleStaffChange(index, 'role', e.target.value)}
+                                                        placeholder="Enter staff role"
+                                                    />
+                                                </div>
+                                                <div className="flex gap-2">
+                                                    <div className="flex-1"></div>
+                                                    {staff.length > 1 && (
+                                                        <Button
+                                                            type="button"
+                                                            variant="outline"
+                                                            size="sm"
+                                                            className="h-10 w-10 p-0 hover:bg-red-50 hover:text-red-600 border-red-200"
+                                                            onClick={() => removeStaff(index)}
+                                                        >
+                                                            <X className="h-4 w-4" />
+                                                        </Button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
                                 {/* Farmers Section */}
-                                <div className="md:col-span-2 space-y-4">
+                                <div className="space-y-4">
                                     <div className="flex justify-between items-center">
                                         <Label className="text-lg font-semibold">Participants ({farmers.filter(f => f.name.trim() !== "").length})</Label>
                                         <div className="flex gap-2">
@@ -793,9 +872,9 @@ const OnboardingPage = () => {
                                         </div>
                                     </div>
                                     
-                                    <div className="space-y-3 max-h-64 overflow-y-auto border rounded-lg p-4">
+                                    <div className="space-y-3 max-h-64 overflow-y-auto border rounded-lg p-4 bg-gray-50">
                                         {farmers.map((farmer, index) => (
-                                            <div key={index} className="grid grid-cols-1 md:grid-cols-5 gap-2 items-end p-3 border rounded bg-gray-50">
+                                            <div key={index} className="grid grid-cols-1 md:grid-cols-5 gap-2 items-end p-3 border rounded bg-white">
                                                 <div className="space-y-1">
                                                     <Label htmlFor={`farmer-name-${index}`}>Name *</Label>
                                                     <Input
@@ -930,7 +1009,7 @@ const OnboardingPage = () => {
 
             {/* View Participants Dialog - Available for all users */}
             <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
-                <DialogContent className="max-w-4xl max-h-[80vh]">
+                <DialogContent className="max-w-6xl max-h-[80vh]">
                     <DialogHeader>
                         <DialogTitle>Onboarding Session Details</DialogTitle>
                         <DialogDescription>
@@ -942,45 +1021,65 @@ const OnboardingPage = () => {
                                     <div>
                                         <strong>Topic:</strong> {selectedRecord.topic}
                                     </div>
-                                    <div>
-                                        <strong>Field Officer:</strong> {selectedRecord.fieldofficer}
-                                    </div>
-                                    <div>
-                                        <strong>Officer Role:</strong> {selectedRecord.fieldofficerrole || 'N/A'}
+                                    <div className="col-span-2">
+                                        <strong>Staff Members:</strong> {selectedRecord.staff.map(s => `${s.name} (${s.role})`).join(', ')}
                                     </div>
                                 </div>
                             )}
                         </DialogDescription>
                     </DialogHeader>
-                    <div className="max-h-96 overflow-y-auto">
-                        <table className="w-full border-collapse border border-gray-300 text-sm">
-                            <thead>
-                                <tr className="bg-gray-100">
-                                    <th className="text-left py-2 px-3 font-medium text-gray-600 border">Name</th>
-                                    <th className="text-left py-2 px-3 font-medium text-gray-600 border">ID Number</th>
-                                    <th className="text-left py-2 px-3 font-medium text-gray-600 border">Phone</th>
-                                    <th className="text-left py-2 px-3 font-medium text-gray-600 border">Location</th>
-                                    <th className="text-left py-2 px-3 font-medium text-gray-600 border">Region</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {selectedRecord?.farmers.map((farmer, index) => (
-                                    <tr key={index} className="border-b hover:bg-gray-50">
-                                        <td className="py-2 px-3 border text-gray-700">{farmer.name}</td>
-                                        <td className="py-2 px-3 border text-gray-700">
-                                            <code className="bg-gray-100 px-2 py-1 rounded text-sm">
-                                                {farmer.idNo || 'N/A'}
-                                            </code>
-                                        </td>
-                                        <td className="py-2 px-3 border text-gray-700">{farmer.phoneNo || 'N/A'}</td>
-                                        <td className="py-2 px-3 border text-gray-700">{farmer.location || 'N/A'}</td>
-                                        <td className="py-2 px-3 border text-gray-700">
-                                            <Badge variant="secondary">{farmer.region || 'N/A'}</Badge>
-                                        </td>
-                                    </tr>
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 max-h-96 overflow-y-auto">
+                        {/* Staff Details */}
+                        <div>
+                            <h4 className="font-semibold mb-3">Staff Members ({selectedRecord?.staff.length || 0})</h4>
+                            <div className="space-y-2">
+                                {selectedRecord?.staff.map((staffMember, index) => (
+                                    <div key={index} className="flex justify-between items-center p-3 border rounded bg-gray-50">
+                                        <div>
+                                            <span className="font-medium">{staffMember.name}</span>
+                                            <Badge variant="secondary" className="ml-2">
+                                                {staffMember.role}
+                                            </Badge>
+                                        </div>
+                                    </div>
                                 ))}
-                            </tbody>
-                        </table>
+                            </div>
+                        </div>
+
+                        {/* Farmers Details */}
+                        <div>
+                            <h4 className="font-semibold mb-3">Participants ({selectedRecord?.farmers.length || 0})</h4>
+                            <div className="max-h-64 overflow-y-auto">
+                                <table className="w-full border-collapse border border-gray-300 text-sm">
+                                    <thead>
+                                        <tr className="bg-gray-100">
+                                            <th className="text-left py-2 px-3 font-medium text-gray-600 border">Name</th>
+                                            <th className="text-left py-2 px-3 font-medium text-gray-600 border">ID Number</th>
+                                            <th className="text-left py-2 px-3 font-medium text-gray-600 border">Phone</th>
+                                            <th className="text-left py-2 px-3 font-medium text-gray-600 border">Location</th>
+                                            <th className="text-left py-2 px-3 font-medium text-gray-600 border">Region</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {selectedRecord?.farmers.map((farmer, index) => (
+                                            <tr key={index} className="border-b hover:bg-gray-50">
+                                                <td className="py-2 px-3 border text-gray-700">{farmer.name}</td>
+                                                <td className="py-2 px-3 border text-gray-700">
+                                                    <code className="bg-gray-100 px-2 py-1 rounded text-sm">
+                                                        {farmer.idNo || 'N/A'}
+                                                    </code>
+                                                </td>
+                                                <td className="py-2 px-3 border text-gray-700">{farmer.phoneNo || 'N/A'}</td>
+                                                <td className="py-2 px-3 border text-gray-700">{farmer.location || 'N/A'}</td>
+                                                <td className="py-2 px-3 border text-gray-700">
+                                                    <Badge variant="secondary">{farmer.region || 'N/A'}</Badge>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
                     </div>
                     <DialogFooter>
                         <Button variant="outline" onClick={() => setIsViewDialogOpen(false)}>

@@ -1,23 +1,31 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { collection, getDocs, query } from "firebase/firestore";
+import { collection, getDocs, query, doc, setDoc, getDoc, where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, AreaChart, Area, Line } from "recharts";
-import { Users, GraduationCap, Beef, Calendar, TrendingUp, Target, Award, Star } from "lucide-react";
+import { Users, GraduationCap, Beef, Calendar, TrendingUp, Target, Award, Star, MapPin, Syringe, TargetIcon, UserCheck, Plus, Edit } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { useToast } from "@/hooks/use-toast";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { isChiefAdmin } from "./onboardingpage";
+import { useAuth } from "@/contexts/AuthContext";
 
 const COLORS = {
   darkBlue: "#1e3a8a",
   orange: "#f97316", 
   yellow: "#f59e0b",
   green: "#16a34a",
-  maroon: "#991b1b"
+  maroon: "#991b1b",
+  purple: "#7c3aed",
+  teal: "#0d9488"
 };
 
-const BAR_COLORS = [COLORS.darkBlue, COLORS.orange, COLORS.yellow, COLORS.green];
+const BAR_COLORS = [COLORS.darkBlue, COLORS.orange, COLORS.yellow, COLORS.green, COLORS.purple, COLORS.teal];
 
 interface OfftakeData {
   id: string;
@@ -35,16 +43,115 @@ interface OfftakeData {
   totalprice: number;
 }
 
+interface User {
+  id: string;
+  name: string;
+  email: string;
+  region: string;
+  monthlyTarget: number;
+}
+
+interface UserProgress {
+  id: string;
+  name: string;
+  email: string;
+  region: string;
+  farmersRegistered: number;
+  monthlyTarget: number;
+  progressPercentage: number;
+  status: 'achieved' | 'on-track' | 'behind' | 'needs-attention';
+}
+
+// Mock users data - Replace this with your actual user fetching logic
+const MOCK_USERS = [
+  { id: "user1", name: "John Doe", email: "john.doe@example.com", region: "", monthlyTarget: 117 },
+  { id: "user2", name: "Jane Smith", email: "jane.smith@example.com", region: "", monthlyTarget: 117 },
+  { id: "user3", name: "Mike Johnson", email: "mike.johnson@example.com", region: "", monthlyTarget: 117 },
+  { id: "user4", name: "Sarah Wilson", email: "sarah.wilson@example.com", region: "", monthlyTarget: 117 },
+  { id: "user5", name: "David Brown", email: "david.brown@example.com", region: "", monthlyTarget: 117 },
+];
+
 const PerformanceReport = () => {
+  const { userRole } = useAuth();
   const [loading, setLoading] = useState(true);
   const [allFarmers, setAllFarmers] = useState<any[]>([]);
   const [trainingRecords, setTrainingRecords] = useState<any[]>([]);
   const [offtakeData, setOfftakeData] = useState<OfftakeData[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [allAvailableUsers, setAllAvailableUsers] = useState<User[]>([]);
+  const [isUserDialogOpen, setIsUserDialogOpen] = useState(false);
+  const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [userForm, setUserForm] = useState({
+    userId: "",
+    name: "",
+    email: "",
+    region: "",
+    monthlyTarget: 117
+  });
   const [dateRange, setDateRange] = useState({
     startDate: "",
     endDate: ""
   });
   const [timeFrame, setTimeFrame] = useState<'weekly' | 'monthly' | 'yearly'>('monthly');
+  const { toast } = useToast();
+
+  // Function to fetch all available users
+  const fetchAllAvailableUsers = async (): Promise<User[]> => {
+    try {
+      // Try to fetch from your users collection first
+      const usersSnapshot = await getDocs(query(collection(db, "users")));
+      
+      if (!usersSnapshot.empty) {
+        const usersData = usersSnapshot.docs.map(doc => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            name: data.name || data.displayName || data.email?.split('@')[0] || 'Unknown User',
+            email: data.email || '',
+            region: data.region || data.assignedRegion || '',
+            monthlyTarget: data.monthlyTarget || 117
+          };
+        }).filter(user => user.email); // Only include users with email
+        
+        return usersData;
+      }
+      
+      // If no users found in Firestore, return mock users
+      console.log("No users found in Firestore, using mock data");
+      return MOCK_USERS;
+      
+    } catch (error) {
+      console.error("Error fetching users:", error);
+      // Return mock users as fallback
+      return MOCK_USERS;
+    }
+  };
+
+  // Function to fetch assigned users (users with regions)
+  const fetchAssignedUsers = async (): Promise<User[]> => {
+    try {
+      const assignedUsersSnapshot = await getDocs(
+        query(collection(db, "users"), where("region", "!=", ""))
+      );
+      
+      if (!assignedUsersSnapshot.empty) {
+        return assignedUsersSnapshot.docs.map(doc => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            name: data.name || data.displayName || data.email?.split('@')[0] || 'Unknown User',
+            email: data.email || '',
+            region: data.region || data.assignedRegion || '',
+            monthlyTarget: data.monthlyTarget || 117
+          };
+        });
+      }
+      return [];
+    } catch (error) {
+      console.error("Error fetching assigned users:", error);
+      return [];
+    }
+  };
 
   const parseDate = (date: any): Date | null => {
     if (!date) return null;
@@ -67,6 +174,17 @@ const PerformanceReport = () => {
     return null;
   };
 
+  // Helper function to get number field from various possible field names
+  const getNumberField = (farmer: any, ...fieldNames: string[]): number => {
+    for (const fieldName of fieldNames) {
+      const value = farmer[fieldName];
+      if (value !== undefined && value !== null && value !== '') {
+        return Number(value) || 0;
+      }
+    }
+    return 0;
+  };
+
   // Helper function to check if a farmer is trained
   const checkIfFarmerTrained = (farmer: any, trainingRecords: any[]): boolean => {
     if (!farmer.phone && !farmer.phoneNo && !farmer.Phone && !farmer.name && !farmer.Name) return false;
@@ -86,7 +204,19 @@ const PerformanceReport = () => {
   };
 
   // Memoized data calculations
-  const { filteredData, genderData, trainedGenderData, registrationTrendData, topOfftakeFarmers, topLocations, stats } = useMemo(() => {
+  const { 
+    filteredData, 
+    genderData, 
+    trainedGenderData, 
+    registrationTrendData, 
+    topOfftakeFarmers, 
+    topLocations, 
+    stats,
+    regionStats,
+    breedStats,
+    vaccinationStats,
+    userProgressData
+  } = useMemo(() => {
     if (allFarmers.length === 0) {
       return {
         filteredData: [],
@@ -104,7 +234,29 @@ const PerformanceReport = () => {
           trainedMale: 0,
           trainedFemale: 0,
           offtakeParticipants: 0
-        }
+        },
+        regionStats: {
+          totalRegions: 0,
+          farmersPerRegion: [],
+          topPerformingRegion: { name: 'N/A', farmers: 0, percentage: 0 },
+          averageFarmersPerRegion: 0
+        },
+        breedStats: {
+          totalBreedsDistributed: 0,
+          farmersReceivingBreeds: 0,
+          breedDistribution: {
+            newBreedFemales: 0,
+            newBreedMales: 0,
+            newBreedYoung: 0
+          }
+        },
+        vaccinationStats: {
+          vaccinatedAnimals: 0,
+          totalAnimals: 0,
+          vaccinationRate: 0,
+          comment: "No data available"
+        },
+        userProgressData: []
       };
     }
 
@@ -130,7 +282,7 @@ const PerformanceReport = () => {
       return true;
     });
 
-    // Calculate stats
+    // Calculate basic stats
     const maleFarmers = filtered.filter(f => String(f.gender || f.Gender).toLowerCase() === 'male').length;
     const femaleFarmers = filtered.filter(f => String(f.gender || f.Gender).toLowerCase() === 'female').length;
     
@@ -146,12 +298,99 @@ const PerformanceReport = () => {
           parseInt(farmer.goatsFemale || farmer.GoatsFemale || farmer.femaleGoats || 0), 0
     );
 
+    // Region Statistics
+    const regionMap: Record<string, number> = {};
+    filtered.forEach(farmer => {
+      const region = farmer.region || farmer.Region || farmer.county || farmer.County || 'Unknown';
+      regionMap[region] = (regionMap[region] || 0) + 1;
+    });
+
+    const farmersPerRegion = Object.entries(regionMap)
+      .map(([name, farmers]) => ({ name, farmers }))
+      .sort((a, b) => b.farmers - a.farmers);
+
+    const topPerformingRegion = farmersPerRegion[0] || { name: 'N/A', farmers: 0 };
+    const averageFarmersPerRegion = farmersPerRegion.length > 0 
+      ? farmersPerRegion.reduce((sum, region) => sum + region.farmers, 0) / farmersPerRegion.length 
+      : 0;
+
+    // Calculate regional performance percentage
+    const totalFarmersInTopRegion = topPerformingRegion.farmers;
+    const regionalPerformancePercentage = totalFarmersInTopRegion > 0 
+      ? (totalFarmersInTopRegion / filtered.length) * 100 
+      : 0;
+
+    // Breed Distribution Statistics
+    const breedDistribution = {
+      newBreedFemales: filtered.reduce((sum, farmer) => sum + getNumberField(farmer, "newBreedFemales", "newBreedFemale"), 0),
+      newBreedMales: filtered.reduce((sum, farmer) => sum + getNumberField(farmer, "newBreedMales", "newBreedMale"), 0),
+      newBreedYoung: filtered.reduce((sum, farmer) => sum + getNumberField(farmer, "newBreedYoung", "newBreedYoungs"), 0)
+    };
+
+    const totalBreedsDistributed = breedDistribution.newBreedFemales + breedDistribution.newBreedMales + breedDistribution.newBreedYoung;
+    
+    const farmersReceivingBreeds = filtered.filter(farmer => 
+      getNumberField(farmer, "numberOfBreeds", "NumberOfBreeds", "breeds", "totalBreeds") > 0 ||
+      getNumberField(farmer, "newBreedFemales", "newBreedFemale") > 0 ||
+      getNumberField(farmer, "newBreedMales", "newBreedMale") > 0 ||
+      getNumberField(farmer, "newBreedYoung", "newBreedYoungs") > 0
+    ).length;
+
+    // Vaccination Statistics
+    const vaccinatedAnimals = filtered.reduce((sum, farmer) => 
+      sum + getNumberField(farmer, "vaccinatedAnimals", "vaccinated", "animalsVaccinated"), 0
+    );
+    
+    const vaccinationRate = totalAnimals > 0 ? (vaccinatedAnimals / totalAnimals) * 100 : 0;
+    
+    let vaccinationComment = "No data available";
+    if (totalAnimals > 0) {
+      if (vaccinationRate < 50) {
+        vaccinationComment = "Action needed";
+      } else if (vaccinationRate >= 50 && vaccinationRate < 75) {
+        vaccinationComment = "EVARGE action needed";
+      } else {
+        vaccinationComment = "Good progress";
+      }
+    }
+
+    // User Progress Tracking - Only users with assigned regions
+    const usersWithRegions = users.filter(user => user.region && user.region.trim() !== '');
+    
+    const userProgressData: UserProgress[] = usersWithRegions.map(user => {
+      const farmersRegistered = filtered.filter(farmer => 
+        farmer.region === user.region || farmer.Region === user.region
+      ).length;
+
+      const monthlyTarget = user.monthlyTarget || 117;
+      const progressPercentage = (farmersRegistered / monthlyTarget) * 100;
+      
+      let status: UserProgress['status'] = 'needs-attention';
+      if (progressPercentage >= 100) {
+        status = 'achieved';
+      } else if (progressPercentage >= 75) {
+        status = 'on-track';
+      } else if (progressPercentage >= 50) {
+        status = 'behind';
+      }
+
+      return {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        region: user.region,
+        farmersRegistered,
+        monthlyTarget,
+        progressPercentage,
+        status
+      };
+    }).sort((a, b) => b.progressPercentage - a.progressPercentage);
+
     // Generate trend data based on time frame
     const generateTrendData = () => {
       const trendData: any[] = [];
       
       if (timeFrame === 'weekly') {
-        // Generate exactly 4 weeks of data
         for (let week = 1; week <= 4; week++) {
           const weekStart = new Date();
           weekStart.setDate(weekStart.getDate() - ((4 - week) * 7));
@@ -265,9 +504,30 @@ const PerformanceReport = () => {
         trainedMale,
         trainedFemale,
         offtakeParticipants: offtakeData.length
-      }
+      },
+      regionStats: {
+        totalRegions: farmersPerRegion.length,
+        farmersPerRegion,
+        topPerformingRegion: {
+          ...topPerformingRegion,
+          percentage: regionalPerformancePercentage
+        },
+        averageFarmersPerRegion
+      },
+      breedStats: {
+        totalBreedsDistributed,
+        farmersReceivingBreeds,
+        breedDistribution
+      },
+      vaccinationStats: {
+        vaccinatedAnimals,
+        totalAnimals,
+        vaccinationRate,
+        comment: vaccinationComment
+      },
+      userProgressData
     };
-  }, [allFarmers, dateRange, timeFrame, trainingRecords, offtakeData]);
+  }, [allFarmers, dateRange, timeFrame, trainingRecords, offtakeData, users]);
 
   // Fetch all data on component mount
   useEffect(() => {
@@ -278,10 +538,13 @@ const PerformanceReport = () => {
     try {
       setLoading(true);
       
-      const [farmersSnapshot, trainingSnapshot, offtakeSnapshot] = await Promise.all([
+      // Fetch all data in parallel
+      const [farmersSnapshot, trainingSnapshot, offtakeSnapshot, availableUsers, assignedUsers] = await Promise.all([
         getDocs(query(collection(db, "Livestock Farmers"))),
         getDocs(query(collection(db, "Capacity Building"))),
-        getDocs(query(collection(db, "Livestock Offtake Data")))
+        getDocs(query(collection(db, "Livestock Offtake Data"))),
+        fetchAllAvailableUsers(), // Prefetch all available users
+        fetchAssignedUsers() // Fetch assigned users
       ]);
 
       const farmersData = farmersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -311,12 +574,126 @@ const PerformanceReport = () => {
       setAllFarmers(farmersData);
       setTrainingRecords(trainingData);
       setOfftakeData(processedOfftakeData);
+      setAllAvailableUsers(availableUsers);
+      setUsers(assignedUsers);
       
     } catch (error) {
       console.error("Error fetching data:", error);
+      // Set mock data as fallback
+      setAllAvailableUsers(MOCK_USERS);
+      setUsers([]);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleUserFormChange = (field: string, value: string) => {
+    setUserForm(prev => ({
+      ...prev,
+      [field]: value
+    }));
+
+    // When user is selected from dropdown, auto-fill name and email
+    if (field === "userId" && value) {
+      const selectedUser = allAvailableUsers.find(user => user.id === value);
+      if (selectedUser) {
+        setUserForm(prev => ({
+          ...prev,
+          userId: value,
+          name: selectedUser.name,
+          email: selectedUser.email
+        }));
+      }
+    }
+  };
+
+  const handleAddUser = async () => {
+    try {
+      if (!userForm.userId || !userForm.region) {
+        toast({
+          title: "Validation Error",
+          description: "Please select a user and assign a region",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const selectedUserData = allAvailableUsers.find(user => user.id === userForm.userId);
+      if (!selectedUserData) {
+        toast({
+          title: "Error",
+          description: "Selected user not found",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const userData = {
+        name: selectedUserData.name,
+        email: selectedUserData.email,
+        region: userForm.region,
+        monthlyTarget: userForm.monthlyTarget,
+        updatedAt: new Date()
+      };
+
+      if (selectedUser) {
+        // Update existing user assignment
+        await setDoc(doc(db, "users", selectedUser.id), userData, { merge: true });
+        toast({
+          title: "Success",
+          description: "User assignment updated successfully",
+        });
+      } else {
+        // Assign region to new user
+        await setDoc(doc(db, "users", userForm.userId), userData, { merge: true });
+        toast({
+          title: "Success",
+          description: "User assigned to region successfully",
+        });
+      }
+
+      setUserForm({
+        userId: "",
+        name: "",
+        email: "",
+        region: "",
+        monthlyTarget: 117
+      });
+      setSelectedUser(null);
+      setIsUserDialogOpen(false);
+      fetchAllData(); // Refresh data
+    } catch (error) {
+      console.error("Error saving user assignment:", error);
+      toast({
+        title: "Error",
+        description: "Failed to assign user to region",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleEditUser = (user: User) => {
+    setSelectedUser(user);
+    setUserForm({
+      userId: user.id,
+      name: user.name,
+      email: user.email,
+      region: user.region,
+      monthlyTarget: user.monthlyTarget
+    });
+    setIsUserDialogOpen(true);
+  };
+
+  const openAddUserDialog = () => {
+    setSelectedUser(null);
+    setUserForm({
+      userId: "",
+      name: "",
+      email: "",
+      region: "",
+      monthlyTarget: 117
+    });
+    setIsUserDialogOpen(true);
   };
 
   const getPerformanceRecommendation = () => {
@@ -400,14 +777,16 @@ const PerformanceReport = () => {
   }, []);
 
   // Stats Card Component
-  const StatsCard = ({ title, value, icon: Icon, description, color = "blue" }: any) => (
+  const StatsCard = ({ title, value, icon: Icon, description, color = "blue", children }: any) => (
     <Card className="relative overflow-hidden group hover:shadow-xl transition-all duration-300 border-0 bg-gradient-to-br from-white to-gray-50">
       <div className={`absolute left-0 top-0 bottom-0 w-1 ${
         color === 'blue' ? 'bg-blue-500' :
         color === 'orange' ? 'bg-orange-500' :
         color === 'yellow' ? 'bg-yellow-500' :
         color === 'green' ? 'bg-green-500' :
-        color === 'red' ? 'bg-red-500' : 'bg-blue-500'
+        color === 'red' ? 'bg-red-500' : 
+        color === 'purple' ? 'bg-purple-500' :
+        color === 'teal' ? 'bg-teal-500' : 'bg-blue-500'
       }`}></div>
       
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 pt-4 pl-6">
@@ -417,24 +796,29 @@ const PerformanceReport = () => {
           color === 'orange' ? 'bg-orange-100' :
           color === 'yellow' ? 'bg-yellow-100' :
           color === 'green' ? 'bg-green-100' :
-          color === 'red' ? 'bg-red-100' : 'bg-blue-100'
+          color === 'red' ? 'bg-red-100' : 
+          color === 'purple' ? 'bg-purple-100' :
+          color === 'teal' ? 'bg-teal-100' : 'bg-blue-100'
         } shadow-sm`}>
           <Icon className={`h-4 w-4 ${
             color === 'blue' ? 'text-blue-600' :
             color === 'orange' ? 'text-orange-600' :
             color === 'yellow' ? 'text-yellow-600' :
             color === 'green' ? 'text-green-600' :
-            color === 'red' ? 'text-red-600' : 'text-blue-600'
+            color === 'red' ? 'text-red-600' : 
+            color === 'purple' ? 'text-purple-600' :
+            color === 'teal' ? 'text-teal-600' : 'text-blue-600'
           }`} />
         </div>
       </CardHeader>
-      <CardContent className="pl-6 pb-4">
-        <div className="text-2xl font-bold text-gray-900">{value}</div>
+      <CardContent className="-2 pl-6 pb-4">
+        <div className=" grid grid-cols-2 text-2xl font-bold text-gray-900">{value}</div>
         {description && (
-          <p className="text-xs text-gray-500 mt-2 font-medium">
+          <p className=" grid grid-cols-2 text-xs text-gray-500 mt-2 font-medium">
             {description}
           </p>
         )}
+        {children}
       </CardContent>
     </Card>
   );
@@ -450,14 +834,21 @@ const PerformanceReport = () => {
 
   const performanceRecommendation = getPerformanceRecommendation();
 
+  // Get unique regions for dropdown
+  const uniqueRegions = Array.from(new Set(allFarmers.map(farmer => 
+    farmer.region || farmer.Region || farmer.county || farmer.County
+  ).filter(Boolean)));
+
+  // Get users not yet assigned to any region for the dropdown
+  const unassignedUsers = allAvailableUsers.filter(availableUser => 
+    !users.some(assignedUser => assignedUser.id === availableUser.id)
+  );
+
   return (
     <div className="space-y-6 p-1">
       {/* Header and Filters */}
-      <div className="flex flex-col justify-between items-start  gap-4">
-    
-          <h1 className="text-xl font-bold text-gray-900">Performance Dashboard</h1>
-         
-        
+      <div className="flex flex-col justify-between items-start gap-4">
+        <h1 className="text-xl font-bold text-gray-900">Performance Dashboard</h1>
 
         {/* Date Range Filter */}
         <Card className="w-full lg:w-auto border-0 shadow-lg bg-white">
@@ -502,7 +893,7 @@ const PerformanceReport = () => {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-4 lg:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <StatsCard 
           title="Total Farmers" 
           value={stats.totalFarmers} 
@@ -535,15 +926,281 @@ const PerformanceReport = () => {
           color="green"
         />
 
-        {/* <StatsCard 
-          title="Performance" 
-          value={performanceRecommendation.text.split(' - ')[0]} 
-          icon={performanceRecommendation.color === 'green' ? TrendingUp : performanceRecommendation.color === 'red' ? Award : Target}
-          description={performanceRecommendation.text.split(' - ')[1]}
-          color={performanceRecommendation.color === 'green' ? 'blue' : performanceRecommendation.color === 'red' ? 'red' : 'yellow'}
-        /> */}
+        {/* Regional Performance Card with detailed region breakdown */}
+    
+<StatsCard 
+  title="Regional Coverage" 
+  value={regionStats.totalRegions} 
+  icon={MapPin}
+  //description={`${stats.totalFarmers} farmers across regions`}
+  color="purple"
+>
+  <div className="mt-3">
+    <div className="grid grid-cols-2 gap-1.5 max-h-24 overflow-y-auto">
+      {regionStats.farmersPerRegion.slice(0, 8).map((region, index) => (
+        <div 
+          key={region.name} 
+          className="flex flex-col-2 gap-2 bg-gray-50 rounded border border-gray-100 hover:bg-gray-100 transition-colors"
+        >
+          <span className="text-[10px] font-light text-gray-600 truncate leading-tight">
+            {region.name}
+          </span>
+          <div className="flex justify-between items-center mt-0.5">
+            <span className="text-[9px] text-gray-800">
+              {region.farmers}
+            </span>
+          </div>
+        </div>
+      ))}
+    </div>
+    {regionStats.farmersPerRegion.length > 8 && (
+      <div className="text-[10px] text-gray-500 text-center mt-2 font-light">
+        +{regionStats.farmersPerRegion.length - 8} more regions
+      </div>
+    )}
+  </div>
+</StatsCard>
+
+        <StatsCard 
+          title="Breeds Distributed" 
+          value={breedStats.totalBreedsDistributed.toLocaleString()} 
+          icon={TargetIcon}
+          description={`${breedStats.farmersReceivingBreeds} farmers received breeds`}
+          color="teal"
+        />
+
+        <StatsCard 
+          title="Farmers with Breeds" 
+          value={breedStats.farmersReceivingBreeds} 
+          icon={UserCheck}
+          description={`${((breedStats.farmersReceivingBreeds / stats.totalFarmers) * 100).toFixed(1)}% of total farmers`}
+          color="blue"
+        />
+
+        <StatsCard 
+          title="Vaccination Coverage" 
+          value={`${vaccinationStats.vaccinationRate.toFixed(1)}%`} 
+          icon={Syringe}
+          description={`${vaccinationStats.comment} - ${vaccinationStats.vaccinatedAnimals.toLocaleString()} animals`}
+          color={vaccinationStats.vaccinationRate >= 75 ? "green" : vaccinationStats.vaccinationRate >= 50 ? "yellow" : "red"}
+        />
       </div>
 
+      {/* User Management and Progress Table - Only shows users with assigned regions */}
+      <Card className="border-0 shadow-lg bg-white">
+        <CardHeader>
+          <div className="flex justify-between items-center">
+            <CardTitle className="text-md flex items-center gap-2 text-gray-800">
+              <UserCheck className="h-5 w-5 text-blue-600" />
+              Field Officers Assignment & Progress (Monthly Target: 117 farmers)
+            </CardTitle>
+
+            {isChiefAdmin(userRole) &&
+            (<Button onClick={openAddUserDialog} size="sm">
+              <Plus className="h-4 w-4 mr-2" />
+              Assign User
+            </Button>)}
+            
+          </div>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Field Officer</TableHead>
+                <TableHead>Email</TableHead>
+                <TableHead>Assigned Region</TableHead>
+                <TableHead>Farmers Registered</TableHead>
+                <TableHead>Monthly Target</TableHead>
+                <TableHead>Progress</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {userProgressData.map((user) => (
+                <TableRow key={user.id}>
+                  <TableCell className="font-medium">{user.name}</TableCell>
+                  <TableCell className="text-sm text-gray-600">{user.email}</TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className="bg-blue-50 text-blue-700">
+                      {user.region}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="font-semibold">{user.farmersRegistered}</TableCell>
+                  <TableCell>{user.monthlyTarget}</TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <div className="w-20 bg-gray-200 rounded-full h-2">
+                        <div 
+                          className={`h-2 rounded-full ${
+                            user.status === 'achieved' ? 'bg-green-500' :
+                            user.status === 'on-track' ? 'bg-blue-500' :
+                            user.status === 'behind' ? 'bg-yellow-500' :
+                            'bg-red-500'
+                          }`}
+                          style={{ width: `${Math.min(user.progressPercentage, 100)}%` }}
+                        />
+                      </div>
+                      <span className="text-sm text-gray-600">{user.progressPercentage.toFixed(1)}%</span>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <Badge 
+                      variant={
+                        user.status === 'achieved' ? 'default' :
+                        user.status === 'on-track' ? 'secondary' :
+                        user.status === 'behind' ? 'outline' :
+                        'destructive'
+                      }
+                      className={
+                        user.status === 'achieved' ? 'bg-green-100 text-green-800' :
+                        user.status === 'on-track' ? 'bg-blue-100 text-blue-800' :
+                        user.status === 'behind' ? 'bg-yellow-100 text-yellow-800' :
+                        'bg-red-100 text-red-800'
+                      }
+                    >
+                      {user.status === 'achieved' ? 'Target Achieved' :
+                       user.status === 'on-track' ? 'On Track' :
+                       user.status === 'behind' ? 'Behind Schedule' :
+                       'Needs Attention'}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                   
+                      {isChiefAdmin(userRole) && ( 
+                        <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleEditUser(user as any)}
+                    >
+                      <Edit className="h-3 w-3 mr-1" />
+                      Edit
+                    </Button>)}
+
+                  </TableCell>
+                </TableRow>
+              ))}
+              {userProgressData.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={8} className="text-center py-8 text-gray-500">
+                    No users assigned to regions yet. Click "Assign User" to get started.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      {/* User Assignment Dialog */}
+      <Dialog open={isUserDialogOpen} onOpenChange={setIsUserDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {selectedUser ? "Edit User Assignment" : "Assign User to Region"}
+            </DialogTitle>
+            <DialogDescription>
+              {selectedUser 
+                ? "Update the region assignment and target for this user."
+                : "Select a user and assign them to a region with a monthly target."
+              }
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="userSelect">Select User *</Label>
+              <Select 
+                value={userForm.userId} 
+                onValueChange={(value) => handleUserFormChange("userId", value)}
+                disabled={!!selectedUser}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Choose a user to assign" />
+                </SelectTrigger>
+                <SelectContent>
+                  {selectedUser ? (
+                    <SelectItem value={selectedUser.id}>
+                      {selectedUser.name} ({selectedUser.email})
+                    </SelectItem>
+                  ) : (
+                    unassignedUsers.map((user) => (
+                      <SelectItem key={user.id} value={user.id}>
+                        {user.name} ({user.email})
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+              {!selectedUser && unassignedUsers.length === 0 && (
+                <p className="text-xs text-gray-500">No unassigned users available.</p>
+              )}
+            </div>
+
+            {userForm.userId && (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="userName">User Name</Label>
+                  <Input
+                    id="userName"
+                    value={userForm.name}
+                    disabled
+                    className="bg-gray-50"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="userEmail">Email</Label>
+                  <Input
+                    id="userEmail"
+                    type="email"
+                    value={userForm.email}
+                    disabled
+                    className="bg-gray-50"
+                  />
+                </div>
+              </>
+            )}
+
+            <div className="space-y-2">
+              <Label htmlFor="userRegion">Assigned Region *</Label>
+              <Select value={userForm.region} onValueChange={(value) => handleUserFormChange("region", value)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a region" />
+                </SelectTrigger>
+                <SelectContent>
+                  {uniqueRegions.map((region) => (
+                    <SelectItem key={region} value={region}>
+                      {region}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="monthlyTarget">Monthly Target</Label>
+              <Input
+                id="monthlyTarget"
+                type="number"
+                value={userForm.monthlyTarget}
+                onChange={(e) => handleUserFormChange("monthlyTarget", e.target.value)}
+                placeholder="117"
+              />
+              <p className="text-xs text-gray-500">Default target is 117 farmers per month</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsUserDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleAddUser} disabled={!userForm.userId || !userForm.region}>
+              {selectedUser ? "Update" : "Assign"} User
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Rest of the charts remain the same */}
       {/* Charts Grid */}
       <div className="grid gap-6 md:grid-cols-2">
         {/* Gender Distribution */}

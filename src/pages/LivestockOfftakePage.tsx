@@ -1081,7 +1081,7 @@ const applyFilters = useCallback(() => {
           title="TOTAL REVENUE" 
           value={formatCurrency(stats.totalRevenue)} 
           icon={CreditCard}
-          description={`Average per farmer: ${formatCurrency(stats.averageRevenue)}`}
+          description={`Average per goat: ${formatCurrency(stats.averageRevenue)}`}
           // subValue={`Avg: ${formatCurrency(stats.averageRevenue)}`}
         />
       </div>
