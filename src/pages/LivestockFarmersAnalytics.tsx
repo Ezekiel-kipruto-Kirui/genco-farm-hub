@@ -812,30 +812,30 @@ const LivestockFarmersAnalytics = () => {
         <CardContent>
           <Table>
             <TableHeader>
-              <TableRow>
-                <TableHead>Field Officer</TableHead>
-                <TableHead>Email</TableHead>
-                <TableHead>Assigned Region</TableHead>
-                <TableHead>Farmers Registered</TableHead>
-                <TableHead>Monthly Target</TableHead>
-                <TableHead>Progress</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Actions</TableHead>
+              <TableRow className="border-b hover:bg-blue-50 transition-all duration-200 group text-sm">
+                <TableHead className="text-sm text-blue-500 py-1 px-4">Field Officer</TableHead>
+                <TableHead className="text-sm text-blue-500 py-1 px-4" >Email</TableHead>
+                <TableHead className="text-sm text-blue-500 py-1 px-4" >Assigned Region</TableHead>
+                <TableHead className="text-sm text-blue-500 py-1 px-4" >Farmers Registered</TableHead>
+                <TableHead className="text-sm text-blue-500 py-1 px-4" >Monthly Target</TableHead>
+                <TableHead className="text-sm text-blue-500 py-1 px-4" >Progress</TableHead>
+                <TableHead className="text-sm text-blue-500 py-1 px-4" >Status</TableHead>
+                <TableHead className="text-sm text-blue-500 py-1 px-4" >Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {userProgressData.map((user) => (
-                <TableRow key={user.id}>
-                  <TableCell className="font-medium">{user.name}</TableCell>
-                  <TableCell className="text-sm text-gray-600">{user.email}</TableCell>
-                  <TableCell>
-                    <Badge variant="outline" className="bg-blue-50 text-blue-700">
+                <TableRow key={user.id} className="border-b hover:bg-blue-50 transition-all duration-200 group text-sm">
+                  <TableCell className=" text-sm text-gray-500 py-1 px-4 font-medium">{user.name}</TableCell>
+                  <TableCell className=" text-sm text-gray-500 py-1 px-4 text-sm text-gray-600">{user.email}</TableCell>
+                  <TableCell className="text-sm text-gray-500 py-1 px-4" >
+                    <Badge variant="outline" className="bg-blue-50 text-sm text-gray-500 py-1 px-4  text-blue-700">
                       {user.region}
                     </Badge>
                   </TableCell>
-                  <TableCell className="font-semibold">{user.farmersRegistered}</TableCell>
-                  <TableCell>{user.monthlyTarget}</TableCell>
-                  <TableCell>
+                  <TableCell className=" text-sm text-gray-500 py-1 px-4 font-semibold">{user.farmersRegistered}</TableCell>
+                  <TableCell className="text-sm text-gray-500 py-1 px-4">{user.monthlyTarget}</TableCell>
+                  <TableCell className="text-sm text-gray-500 py-1 px-4">
                     <div className="flex items-center gap-2">
                       <div className="w-20 bg-gray-200 rounded-full h-2">
                         <div 
