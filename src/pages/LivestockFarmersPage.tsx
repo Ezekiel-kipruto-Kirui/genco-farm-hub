@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { collection, getDocs, query, updateDoc, doc, deleteDoc, writeBatch } from "firebase/firestore";
-import { db, fetchData } from "@/lib/firebase";
+import { db } from "@/lib/firebase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,9 +10,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
-import { Download, Users, Beef, Edit, Trash2, GraduationCap, Eye, MapPin, Calendar } from "lucide-react";
+import { Download, Users, Beef, Edit, Trash2, GraduationCap, Eye, MapPin, Calendar, Upload, Sprout } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { isChiefAdmin } from "./onboardingpage";
+import { uploadDataWithValidation, formatValidationErrors, UploadResult } from "@/lib/uploads-util";
 
 // Types
 interface Farmer {
@@ -103,12 +104,10 @@ interface EditForm {
   IdNo: string;
   date: string;
   gender: string;
-  numberOfBreeds: string;
   location: string;
-  goatsMale: string;
-  goatsFemale: string;
-  trained: boolean;
-  trainingDate: string;
+  newBreedFemales: string;
+  newBreedMales: string;
+  newBreedYoung: string;
 }
 
 // Constants
@@ -188,14 +187,19 @@ const LivestockFarmersPage = () => {
   const [filteredFarmers, setFilteredFarmers] = useState<Farmer[]>([]);
   const [loading, setLoading] = useState(true);
   const [exportLoading, setExportLoading] = useState(false);
+  const [uploadLoading, setUploadLoading] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
   const [selectedFarmers, setSelectedFarmers] = useState<string[]>([]);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
+  const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [viewingFarmer, setViewingFarmer] = useState<Farmer | null>(null);
   const [editingFarmer, setEditingFarmer] = useState<Farmer | null>(null);
-  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
   
   const currentMonth = useMemo(getCurrentMonthDates, []);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Search state - completely separate from filters
   const [searchValue, setSearchValue] = useState("");
@@ -231,16 +235,15 @@ const LivestockFarmersPage = () => {
     IdNo: "",
     date: "",
     gender: "",
-    numberOfBreeds: "",
     location: "",
-    goatsMale: "",
-    goatsFemale: "",
-    trained: false,
-    trainingDate: ""
+    newBreedFemales: "",
+    newBreedMales: "",
+    newBreedYoung: ""
   });
- const userIsChiefAdmin = useMemo(() => {
-        return isChiefAdmin(userRole);
-    }, [userRole]);
+
+  const userIsChiefAdmin = useMemo(() => {
+    return isChiefAdmin(userRole);
+  }, [userRole]);
 
   // Data fetching
   const fetchAllData = useCallback(async () => {
@@ -295,13 +298,13 @@ const LivestockFarmersPage = () => {
           maleGoats: getNumberField("maleGoats", "goatsMale"),
           femaleGoats: getNumberField("femaleGoats", "goatsFemale"),
           numberOfBreeds: getNumberField("numberOfBreeds", "NumberOfBreeds", "breeds", "totalBreeds"),
-          newBreedFemales: getNumberField("newBreedFemales"),
-          newBreedMales: getNumberField("newBreedMales"),
-          newBreedYoung: getNumberField("newBreedYoung"),
+          newBreedFemales: getNumberField("newBreedFemales", "NewBreedFemales"),
+          newBreedMales: getNumberField("newBreedMales", "NewBreedMales"),
+          newBreedYoung: getNumberField("newBreedYoung", "NewBreedYoung"),
           
           // Health Information
           vaccineType: getField("vaccineType", "VaccineType"),
-          vaccinationDate: getField("vaccineDate", "vaccinationDate", "VaccinationDate"),
+          vaccinationDate: getField("vaccinationDate", "VaccinationDate", "vaccineDate"),
           dewormingDate: getField("dewormingDate", "DewormingDate", "deworm_date"),
           dippingDate: getField("dippingDate", "DippingDate", "dip_date"),
           dewormingSchedule: getField("dewormingSchedule"),
@@ -509,6 +512,163 @@ const LivestockFarmersPage = () => {
     setPagination(prev => ({ ...prev, page: 1 }));
   }, []);
 
+  // File upload handlers
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      setUploadFile(file);
+    }
+  };
+
+  const handleUpload = async () => {
+    if (!uploadFile) {
+      toast({
+        title: "No File Selected",
+        description: "Please select a file to upload",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setUploadLoading(true);
+      
+      const result: UploadResult = await uploadDataWithValidation(uploadFile, 'Livestock Farmers');
+
+      if (result.success) {
+        toast({
+          title: "Upload Successful",
+          description: result.message,
+        });
+        
+        // Refresh data
+        fetchAllData();
+      } else {
+        // Show detailed validation errors
+        let errorMessage = result.message;
+        
+        if (result.validationErrors && result.validationErrors.length > 0) {
+          errorMessage += '\n\n' + formatValidationErrors(result.validationErrors);
+          
+          toast({
+            title: "Data Schema Mismatch",
+            description: (
+              <div className="max-h-60 overflow-y-auto">
+                <p className="font-semibold mb-2">Please update your data to match the database schema:</p>
+                <pre className="text-sm whitespace-pre-wrap">{errorMessage}</pre>
+              </div>
+            ),
+            variant: "destructive",
+            duration: 10000, // Show for longer
+          });
+        } else {
+          toast({
+            title: "Upload Failed",
+            description: result.message,
+            variant: "destructive",
+          });
+        }
+      }
+
+      // Reset file input
+      setUploadFile(null);
+      setIsUploadDialogOpen(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+
+    } catch (error) {
+      console.error('Error uploading file:', error);
+      toast({
+        title: "Upload Failed",
+        description: "An unexpected error occurred",
+        variant: "destructive",
+      });
+    } finally {
+      setUploadLoading(false);
+    }
+  };
+
+  // Delete single farmer
+  const handleDeleteSingle = async (farmerId: string) => {
+    try {
+      setDeleteLoading(true);
+      await deleteDoc(doc(db, "Livestock Farmers", farmerId));
+
+      toast({
+        title: "Success",
+        description: "Record deleted successfully",
+      });
+
+      // Remove from selected farmers if present
+      setSelectedFarmers(prev => prev.filter(id => id !== farmerId));
+      fetchAllData();
+    } catch (error) {
+      console.error("Error deleting record:", error);
+      toast({
+        title: "Error",
+        description: "Failed to delete record",
+        variant: "destructive",
+      });
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+  // Delete multiple farmers
+  const handleDeleteMultiple = async () => {
+    if (selectedFarmers.length === 0) {
+      toast({
+        title: "No Records Selected",
+        description: "Please select records to delete",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setDeleteLoading(true);
+      const batch = writeBatch(db);
+
+      selectedFarmers.forEach(farmerId => {
+        const docRef = doc(db, "Livestock Farmers", farmerId);
+        batch.delete(docRef);
+      });
+
+      await batch.commit();
+
+      toast({
+        title: "Success",
+        description: `Deleted ${selectedFarmers.length} records successfully`,
+      });
+
+      setSelectedFarmers([]);
+      setIsDeleteConfirmOpen(false);
+      fetchAllData();
+    } catch (error) {
+      console.error("Error deleting records:", error);
+      toast({
+        title: "Error",
+        description: "Failed to delete records",
+        variant: "destructive",
+      });
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+  const openDeleteConfirm = () => {
+    if (selectedFarmers.length === 0) {
+      toast({
+        title: "No Records Selected",
+        description: "Please select records to delete",
+        variant: "destructive",
+      });
+      return;
+    }
+    setIsDeleteConfirmOpen(true);
+  };
+
   const handleExport = useCallback(async () => {
     try {
       setExportLoading(true);
@@ -644,15 +804,13 @@ const LivestockFarmersPage = () => {
       IdNo: farmer.IdNo || farmer.farmerId || farmer.idNo || "",
       date: farmer.dateSubmitted ? (parseDate(farmer.dateSubmitted)?.toISOString().split('T')[0] || "") : "",
       gender: farmer.gender || "",
-      numberOfBreeds: (farmer.numberOfBreeds || 0).toString(),
       location: farmer.location || farmer.region || "",
-      goatsMale: (farmer.goatsMale || farmer.maleGoats || 0).toString(),
-      goatsFemale: (farmer.goatsFemale || farmer.femaleGoats || 0).toString(),
-      trained: isFarmerTrained(farmer),
-      trainingDate: ""
+      newBreedFemales: (farmer.newBreedFemales || 0).toString(),
+      newBreedMales: (farmer.newBreedMales || 0).toString(),
+      newBreedYoung: (farmer.newBreedYoung || 0).toString()
     });
     setIsEditDialogOpen(true);
-  }, [isFarmerTrained]);
+  }, []);
 
   const openViewDialog = useCallback((farmer: Farmer) => {
     setViewingFarmer(farmer);
@@ -670,21 +828,19 @@ const LivestockFarmersPage = () => {
         IdNo: editForm.IdNo,
         dateSubmitted: editForm.date ? new Date(editForm.date) : null,
         gender: editForm.gender,
-        numberOfBreeds: parseInt(editForm.numberOfBreeds) || 0,
         location: editForm.location,
-        goatsMale: parseInt(editForm.goatsMale) || 0,
-        goatsFemale: parseInt(editForm.goatsFemale) || 0,
-        trained: editForm.trained,
-        trainingDate: editForm.trainingDate ? new Date(editForm.trainingDate) : null,
+        newBreedFemales: parseInt(editForm.newBreedFemales) || 0,
+        newBreedMales: parseInt(editForm.newBreedMales) || 0,
+        newBreedYoung: parseInt(editForm.newBreedYoung) || 0,
+        // Also update the PascalCase versions for consistency
         Name: editForm.name,
         FarmerID: editForm.IdNo,
         Gender: editForm.gender,
-        NumberOfBreeds: parseInt(editForm.numberOfBreeds) || 0,
         Location: editForm.location,
-        GoatsMale: parseInt(editForm.goatsMale) || 0,
-        GoatsFemale: parseInt(editForm.goatsFemale) || 0,
-        Trained: editForm.trained,
-        TrainingDate: editForm.trainingDate ? new Date(editForm.trainingDate) : null
+        NewBreedFemales: parseInt(editForm.newBreedFemales) || 0,
+        NewBreedMales: parseInt(editForm.newBreedMales) || 0,
+        NewBreedYoung: parseInt(editForm.newBreedYoung) || 0,
+        updatedAt: new Date()
       };
 
       await updateDoc(farmerRef, updateData);
@@ -706,39 +862,6 @@ const LivestockFarmersPage = () => {
       });
     }
   }, [editingFarmer, editForm, fetchAllData, toast]);
-
-  const handleDeleteSelected = useCallback(async () => {
-    if (selectedFarmers.length === 0) return;
-
-    try {
-      setDeleteLoading(true);
-      const batch = writeBatch(db);
-
-      selectedFarmers.forEach(farmerId => {
-        const docRef = doc(db, "Livestock Farmers", farmerId);
-        batch.delete(docRef);
-      });
-
-      await batch.commit();
-
-      toast({
-        title: "Success",
-        description: `Deleted ${selectedFarmers.length} records successfully`,
-      });
-
-      setSelectedFarmers([]);
-      fetchAllData();
-    } catch (error) {
-      console.error("Error deleting records:", error);
-      toast({
-        title: "Error",
-        description: "Failed to delete records",
-        variant: "destructive",
-      });
-    } finally {
-      setDeleteLoading(false);
-    }
-  }, [selectedFarmers, fetchAllData, toast]);
 
   // Memoized values
   const uniqueRegions = useMemo(() => 
@@ -818,7 +941,7 @@ const LivestockFarmersPage = () => {
           />
         </td>
         <td className="py-1 px-5 text-xs text-gray-600">{formatDate(farmer.dateSubmitted || farmer.createdAt)}</td>
-      <td className="py-1 px-5 text-xs text-gray-600">{farmer.name || 'N/A'}</td>
+        <td className="py-1 px-5 text-xs text-gray-600">{farmer.name || 'N/A'}</td>
         <td className="py-1 px-5 text-xs text-gray-600">{farmer.gender || 'N/A'}</td>
         <td className="py-1 px-5 text-xs text-gray-600">
           <code className="text-sm bg-gray-100 px-2 py-1 rounded text-gray-700">
@@ -840,7 +963,18 @@ const LivestockFarmersPage = () => {
             {isTrained ? 'Trained' : 'Not Trained'}
           </Badge>
         </td>
-        <td className="py-1 px-5 text-xs text-gray-600">{farmer.numberOfBreeds || 0}</td>
+        <td className="py-1 px-5 text-xs text-gray-600">
+          <div className="flex flex-col gap-1">
+            <span>Total: {farmer.numberOfBreeds || 0}</span>
+            {(farmer.newBreedMales || farmer.newBreedFemales || farmer.newBreedYoung) && (
+              <div className="flex gap-1 text-xs text-gray-500">
+                <span>M: {farmer.newBreedMales || 0}</span>
+                <span>F: {farmer.newBreedFemales || 0}</span>
+                <span>Y: {farmer.newBreedYoung || 0}</span>
+              </div>
+            )}
+          </div>
+        </td>
         <td className="py-1 px-5 text-xs text-gray-600">
           <div className="flex gap-2">
             <Button
@@ -851,30 +985,32 @@ const LivestockFarmersPage = () => {
             >
               <Eye className="h-3 w-3 text-green-500" />
             </Button>
-             {isChiefAdmin(userRole) &&(
-              <Button
-              variant="outline"
-              size="sm"
-              onClick={() => openEditDialog(farmer)}
-              className="h-8 w-8 p-0 hover:bg-blue-50 hover:text-blue-600 border-blue-200"
-            >
-              <Edit className="h-3 w-3 text-blue-500" />
-            </Button>
-           
-             )}
-             {isChiefAdmin(userRole) &&( <Button
-              variant="outline"
-              size="sm"
-              onClick={() => handleSelectFarmer(farmer.id)}
-              className="h-8 w-8 p-0 hover:bg-red-50 hover:text-red-600 border-red-200"
-            >
-              <Trash2 className="h-3 w-3 text-red-500" />
-            </Button>)}
+            {userIsChiefAdmin && (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => openEditDialog(farmer)}
+                  className="h-8 w-8 p-0 hover:bg-blue-50 hover:text-blue-600 border-blue-200"
+                >
+                  <Edit className="h-3 w-3 text-blue-500" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleDeleteSingle(farmer.id)}
+                  disabled={deleteLoading}
+                  className="h-8 w-8 p-0 hover:bg-red-50 hover:text-red-600 border-red-200"
+                >
+                  <Trash2 className="h-3 w-3 text-red-500" />
+                </Button>
+              </>
+            )}
           </div>
         </td>
       </tr>
     );
-  }, [isFarmerTrained, getFarmerTrainingDetails, selectedFarmers, handleSelectFarmer, openViewDialog, openEditDialog]);
+  }, [isFarmerTrained, getFarmerTrainingDetails, selectedFarmers, handleSelectFarmer, openViewDialog, openEditDialog, userIsChiefAdmin, deleteLoading, handleDeleteSingle]);
 
   // Memoized FilterSection component
   const FilterSection = useMemo(() => (
@@ -977,6 +1113,20 @@ const LivestockFarmersPage = () => {
         </div>
 
         <div className="flex flex-wrap gap-2">
+          {/* Bulk Actions */}
+          {selectedFarmers.length > 0 && (
+            <Button 
+              variant="destructive" 
+              size="sm" 
+              onClick={openDeleteConfirm}
+              disabled={deleteLoading}
+              className="text-xs"
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              Delete ({selectedFarmers.length})
+            </Button>
+          )}
+          
           <Button 
             variant="outline" 
             size="sm" 
@@ -994,15 +1144,27 @@ const LivestockFarmersPage = () => {
             This Month
           </Button>
 
-           {isChiefAdmin(userRole) &&( <Button 
-            onClick={handleExport} 
-            disabled={exportLoading || filteredFarmers.length === 0}
-            className="bg-gradient-to-r from-blue-800 to-purple-600 hover:from-green-600 hover:to-emerald-700 text-white shadow-md text-xs"
-          >
-            <Download className="h-4 w-4 mr-2" />
-            {exportLoading ? "Exporting..." : `Export (${filteredFarmers.length})`}
-          </Button>)}
-         
+          {userIsChiefAdmin && (
+            <>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => setIsUploadDialogOpen(true)}
+                className="text-xs border-green-300 hover:bg-green-50 text-green-700"
+              >
+                <Upload className="h-4 w-4 mr-2" />
+                Upload Data
+              </Button>
+              <Button 
+                onClick={handleExport} 
+                disabled={exportLoading || filteredFarmers.length === 0}
+                className="bg-gradient-to-r from-blue-800 to-purple-600 hover:from-green-600 hover:to-emerald-700 text-white shadow-md text-xs"
+              >
+                <Download className="h-4 w-4 mr-2" />
+                {exportLoading ? "Exporting..." : `Export (${filteredFarmers.length})`}
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
@@ -1128,6 +1290,137 @@ const LivestockFarmersPage = () => {
         </CardContent>
       </Card>
 
+      {/* Upload Data Dialog */}
+      <Dialog open={isUploadDialogOpen} onOpenChange={setIsUploadDialogOpen}>
+        <DialogContent className="sm:max-w-md bg-white rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-slate-900">
+              <Upload className="h-5 w-5 text-green-600" />
+              Upload Livestock Farmers Data
+            </DialogTitle>
+            <DialogDescription>
+              Upload data from CSV or JSON files. The file should contain livestock farmer records.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="file-upload">Select File</Label>
+              <Input
+                id="file-upload"
+                ref={fileInputRef}
+                type="file"
+                accept=".csv,.json"
+                onChange={handleFileSelect}
+                className="bg-white border-slate-300"
+              />
+              <p className="text-xs text-slate-500">
+                Supported formats: CSV, JSON. Maximum file size: 10MB
+              </p>
+            </div>
+            
+            {uploadFile && (
+              <div className="bg-slate-50 rounded-lg p-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium text-slate-900">{uploadFile.name}</p>
+                    <p className="text-sm text-slate-500">
+                      {(uploadFile.size / 1024 / 1024).toFixed(2)} MB
+                    </p>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setUploadFile(null);
+                      if (fileInputRef.current) {
+                        fileInputRef.current.value = '';
+                      }
+                    }}
+                    className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setIsUploadDialogOpen(false);
+                setUploadFile(null);
+                if (fileInputRef.current) {
+                  fileInputRef.current.value = '';
+                }
+              }}
+              className="border-slate-300"
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleUpload} 
+              disabled={!uploadFile || uploadLoading}
+              className="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white"
+            >
+              {uploadLoading ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  Uploading...
+                </>
+              ) : (
+                <>
+                  <Upload className="h-4 w-4 mr-2" />
+                  Upload Data
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
+        <DialogContent className="sm:max-w-md bg-white rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-slate-900">
+              <Trash2 className="h-5 w-5 text-red-600" />
+              Confirm Deletion
+            </DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete {selectedFarmers.length} selected records? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => setIsDeleteConfirmOpen(false)}
+              className="border-slate-300"
+            >
+              Cancel
+            </Button>
+            <Button 
+              variant="destructive"
+              onClick={handleDeleteMultiple}
+              disabled={deleteLoading}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              {deleteLoading ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  Deleting...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete {selectedFarmers.length} Records
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* View Farmer Dialog */}
       <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
         <DialogContent className="sm:max-w-2xl bg-white rounded-2xl">
@@ -1224,6 +1517,35 @@ const LivestockFarmersPage = () => {
                     <p className="text-slate-900 font-medium">{viewingFarmer.numberOfBreeds || 0}</p>
                   </div>
                 </div>
+                
+                {/* Breed Information */}
+                {(viewingFarmer.newBreedMales || viewingFarmer.newBreedFemales || viewingFarmer.newBreedYoung) && (
+                  <div className="mt-4 pt-4 border-t border-slate-200">
+                    <h4 className="font-semibold text-slate-700 mb-2 flex items-center gap-2">
+                      <Sprout className="h-4 w-4 text-green-600" />
+                      New Breed Distribution
+                    </h4>
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className="text-center">
+                        <Label className="text-sm font-medium text-slate-600">New Breed Males</Label>
+                        <p className="text-slate-900 font-bold text-lg">{viewingFarmer.newBreedMales || 0}</p>
+                      </div>
+                      <div className="text-center">
+                        <Label className="text-sm font-medium text-slate-600">New Breed Females</Label>
+                        <p className="text-slate-900 font-bold text-lg">{viewingFarmer.newBreedFemales || 0}</p>
+                      </div>
+                      <div className="text-center">
+                        <Label className="text-sm font-medium text-slate-600">New Breed Young</Label>
+                        <p className="text-slate-900 font-bold text-lg">{viewingFarmer.newBreedYoung || 0}</p>
+                      </div>
+                    </div>
+                    <div className="mt-2 text-center">
+                      <p className="text-sm text-slate-600">
+                        Total New Breeds: {(viewingFarmer.newBreedMales || 0) + (viewingFarmer.newBreedFemales || 0) + (viewingFarmer.newBreedYoung || 0)}
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Training Information */}
@@ -1301,7 +1623,7 @@ const LivestockFarmersPage = () => {
 
       {/* Edit Dialog */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="sm:max-w-md bg-white rounded-2xl">
+        <DialogContent className="sm:max-w-2xl bg-white rounded-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-slate-900">
               <Edit className="h-5 w-5 text-blue-600" />
@@ -1309,116 +1631,118 @@ const LivestockFarmersPage = () => {
             </DialogTitle>
           </DialogHeader>
           <div className="grid gap-4 py-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="edit-name">Farmer Name</Label>
-                <Input
-                  id="edit-name"
-                  value={editForm.name}
-                  onChange={(e) => setEditForm(prev => ({ ...prev, name: e.target.value }))}
-                  className="bg-white border-slate-300"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit-id">ID Number</Label>
-                <Input
-                  id="edit-id"
-                  value={editForm.IdNo}
-                  onChange={(e) => setEditForm(prev => ({ ...prev, IdNo: e.target.value }))}
-                  className="bg-white border-slate-300"
-                />
-              </div>
-            </div>
-            
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="edit-date">Date</Label>
-                <Input
-                  id="edit-date"
-                  type="date"
-                  value={editForm.date}
-                  onChange={(e) => setEditForm(prev => ({ ...prev, date: e.target.value }))}
-                  className="bg-white border-slate-300"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit-gender">Gender</Label>
-                <Select value={editForm.gender} onValueChange={(value) => setEditForm(prev => ({ ...prev, gender: value }))}>
-                  <SelectTrigger className="bg-white border-slate-300">
-                    <SelectValue placeholder="Select gender" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="male">Male</SelectItem>
-                    <SelectItem value="female">Female</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="edit-breeds">Number of Breeds</Label>
-                <Input
-                  id="edit-breeds"
-                  type="number"
-                  value={editForm.numberOfBreeds}
-                  onChange={(e) => setEditForm(prev => ({ ...prev, numberOfBreeds: e.target.value }))}
-                  className="bg-white border-slate-300"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit-location">Location</Label>
-                <Input
-                  id="edit-location"
-                  value={editForm.location}
-                  onChange={(e) => setEditForm(prev => ({ ...prev, location: e.target.value }))}
-                  className="bg-white border-slate-300"
-                />
+            {/* Personal Information */}
+            <div className="space-y-4">
+              <h3 className="font-semibold text-slate-800">Personal Information</h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-name">Farmer Name</Label>
+                  <Input
+                    id="edit-name"
+                    value={editForm.name}
+                    onChange={(e) => setEditForm(prev => ({ ...prev, name: e.target.value }))}
+                    className="bg-white border-slate-300"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-id">ID Number</Label>
+                  <Input
+                    id="edit-id"
+                    value={editForm.IdNo}
+                    onChange={(e) => setEditForm(prev => ({ ...prev, IdNo: e.target.value }))}
+                    className="bg-white border-slate-300"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-date">Date</Label>
+                  <Input
+                    id="edit-date"
+                    type="date"
+                    value={editForm.date}
+                    onChange={(e) => setEditForm(prev => ({ ...prev, date: e.target.value }))}
+                    className="bg-white border-slate-300"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-gender">Gender</Label>
+                  <Select value={editForm.gender} onValueChange={(value) => setEditForm(prev => ({ ...prev, gender: value }))}>
+                    <SelectTrigger className="bg-white border-slate-300">
+                      <SelectValue placeholder="Select gender" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="male">Male</SelectItem>
+                      <SelectItem value="female">Female</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="edit-goats-male">Male Goats</Label>
-                <Input
-                  id="edit-goats-male"
-                  type="number"
-                  value={editForm.goatsMale}
-                  onChange={(e) => setEditForm(prev => ({ ...prev, goatsMale: e.target.value }))}
-                  className="bg-white border-slate-300"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit-goats-female">Female Goats</Label>
-                <Input
-                  id="edit-goats-female"
-                  type="number"
-                  value={editForm.goatsFemale}
-                  onChange={(e) => setEditForm(prev => ({ ...prev, goatsFemale: e.target.value }))}
-                  className="bg-white border-slate-300"
-                />
+            {/* Location Information */}
+            <div className="space-y-4">
+              <h3 className="font-semibold text-slate-800">Location Information</h3>
+              <div className="grid grid-cols-1 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-location">Location</Label>
+                  <Input
+                    id="edit-location"
+                    value={editForm.location}
+                    onChange={(e) => setEditForm(prev => ({ ...prev, location: e.target.value }))}
+                    className="bg-white border-slate-300"
+                  />
+                </div>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2 flex items-center gap-2">
-                <Checkbox
-                  id="edit-trained"
-                  checked={editForm.trained}
-                  onCheckedChange={(checked) => setEditForm(prev => ({ ...prev, trained: checked as boolean }))}
-                />
-                <Label htmlFor="edit-trained" className="cursor-pointer">Trained Farmer</Label>
+            {/* New Breed Information */}
+            <div className="space-y-4">
+              <h3 className="font-semibold text-slate-800 flex items-center gap-2">
+              
+                New Breed Distribution
+              </h3>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-new-breed-males" className="text-sm">New Breed Males</Label>
+                  <Input
+                    id="edit-new-breed-males"
+                    type="number"
+                    value={editForm.newBreedMales}
+                    onChange={(e) => setEditForm(prev => ({ ...prev, newBreedMales: e.target.value }))}
+                    className="bg-white border-slate-300 text-center"
+                    min="0"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-new-breed-females" className="text-sm">New Breed Females</Label>
+                  <Input
+                    id="edit-new-breed-females"
+                    type="number"
+                    value={editForm.newBreedFemales}
+                    onChange={(e) => setEditForm(prev => ({ ...prev, newBreedFemales: e.target.value }))}
+                    className="bg-white border-slate-300 text-center"
+                    min="0"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-new-breed-young" className="text-sm">New Breed Young</Label>
+                  <Input
+                    id="edit-new-breed-young"
+                    type="number"
+                    value={editForm.newBreedYoung}
+                    onChange={(e) => setEditForm(prev => ({ ...prev, newBreedYoung: e.target.value }))}
+                    className="bg-white border-slate-300 text-center"
+                    min="0"
+                  />
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit-training-date">Training Date</Label>
-                <Input
-                  id="edit-training-date"
-                  type="date"
-                  value={editForm.trainingDate}
-                  onChange={(e) => setEditForm(prev => ({ ...prev, trainingDate: e.target.value }))}
-                  className="bg-white border-slate-300"
-                  disabled
-                />
+              <div className="text-center">
+                <p className="text-sm text-slate-600">
+                  Total New Breeds: {(
+                    (parseInt(editForm.newBreedMales) || 0) + 
+                    (parseInt(editForm.newBreedFemales) || 0) + 
+                    (parseInt(editForm.newBreedYoung) || 0)
+                  ).toLocaleString()}
+                </p>
               </div>
             </div>
           </div>

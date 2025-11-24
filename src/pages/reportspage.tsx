@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 
+// Constants
 const COLORS = {
   darkBlue: "#1e3a8a",
   orange: "#f97316", 
@@ -21,6 +22,7 @@ const COLORS = {
 
 const BAR_COLORS = [COLORS.darkBlue, COLORS.orange, COLORS.yellow, COLORS.green, COLORS.purple, COLORS.teal];
 
+// Types
 interface OfftakeData {
   id: string;
   date: Date;
@@ -37,83 +39,121 @@ interface OfftakeData {
   totalprice: number;
 }
 
-const PerformanceReport = () => {
-  const [loading, setLoading] = useState(true);
-  const [allFarmers, setAllFarmers] = useState<any[]>([]);
-  const [trainingRecords, setTrainingRecords] = useState<any[]>([]);
-  const [offtakeData, setOfftakeData] = useState<OfftakeData[]>([]);
-  const [dateRange, setDateRange] = useState({
-    startDate: "",
-    endDate: ""
-  });
-  const [timeFrame, setTimeFrame] = useState<'weekly' | 'monthly' | 'yearly'>('monthly');
+interface Farmer {
+  id: string;
+  [key: string]: any;
+}
 
-  const parseDate = (date: any): Date | null => {
-    if (!date) return null;
-    try {
-      if (date.toDate && typeof date.toDate === 'function') {
-        return date.toDate();
-      } else if (date instanceof Date) {
-        return date;
-      } else if (typeof date === 'string') {
-        const parsed = new Date(date);
-        return isNaN(parsed.getTime()) ? null : parsed;
-      } else if (typeof date === 'number') {
-        return new Date(date);
-      } else if (date.seconds) {
-        return new Date(date.seconds * 1000);
-      }
-    } catch (error) {
-      console.error('Error parsing date:', error);
+interface TrainingRecord {
+  id: string;
+  [key: string]: any;
+}
+
+// Helper functions
+const parseDate = (date: any): Date | null => {
+  if (!date) return null;
+  try {
+    if (date.toDate && typeof date.toDate === 'function') {
+      return date.toDate();
+    } else if (date instanceof Date) {
+      return date;
+    } else if (typeof date === 'string') {
+      const parsed = new Date(date);
+      return isNaN(parsed.getTime()) ? null : parsed;
+    } else if (typeof date === 'number') {
+      return new Date(date);
+    } else if (date.seconds) {
+      return new Date(date.seconds * 1000);
     }
-    return null;
-  };
+  } catch (error) {
+    console.error('Error parsing date:', error);
+  }
+  return null;
+};
 
-  // Helper function to get number field from various possible field names
-  const getNumberField = (farmer: any, ...fieldNames: string[]): number => {
-    for (const fieldName of fieldNames) {
-      const value = farmer[fieldName];
-      if (value !== undefined && value !== null && value !== '') {
-        return Number(value) || 0;
-      }
+const getNumberField = (farmer: any, ...fieldNames: string[]): number => {
+  for (const fieldName of fieldNames) {
+    const value = farmer[fieldName];
+    if (value !== undefined && value !== null && value !== '') {
+      return Number(value) || 0;
     }
-    return 0;
-  };
+  }
+  return 0;
+};
 
-  // Helper function to check if a farmer is trained
-  const checkIfFarmerTrained = (farmer: any, trainingRecords: any[]): boolean => {
-    if (!farmer.phone && !farmer.phoneNo && !farmer.Phone && !farmer.name && !farmer.Name) return false;
+const isFarmerTrained = (farmer: Farmer, trainingRecords: TrainingRecord[]): boolean => {
+  const farmerPhone = (farmer.phone || farmer.phoneNo || farmer.Phone)?.toString().trim();
+  const farmerName = (farmer.name || farmer.Name)?.toString().toLowerCase().trim();
+  
+  return trainingRecords.some(record => {
+    const recordPhone = record.Phone?.toString().trim();
+    const recordName = record.Name?.toString().toLowerCase().trim();
     
-    return trainingRecords.some(record => {
-      const recordPhone = record.Phone?.toString().trim();
-      const recordName = record.Name?.toString().toLowerCase().trim();
-      
-      const farmerPhone = (farmer.phone || farmer.phoneNo || farmer.Phone)?.toString().trim();
-      const farmerName = (farmer.name || farmer.Name)?.toString().toLowerCase().trim();
-      
-      return (
-        (recordPhone && farmerPhone && recordPhone === farmerPhone) ||
-        (recordName && farmerName && recordName === farmerName)
-      );
-    });
-  };
+    return (
+      (recordPhone && farmerPhone && recordPhone === farmerPhone) ||
+      (recordName && farmerName && recordName === farmerName)
+    );
+  });
+};
 
-  // Memoized data calculations
-  const { 
-    filteredData, 
-    genderData, 
-    trainedGenderData, 
-    registrationTrendData, 
-    topOfftakeFarmers, 
-    topLocations, 
-    stats,
-    regionStats,
-    breedStats,
-    vaccinationStats
-  } = useMemo(() => {
+const isDateInRange = (date: any, startDate: string, endDate: string): boolean => {
+  if (!startDate && !endDate) return true;
+  
+  const parsedDate = parseDate(date);
+  if (!parsedDate) return false;
+
+  const dateOnly = new Date(parsedDate);
+  dateOnly.setHours(0, 0, 0, 0);
+
+  const start = startDate ? new Date(startDate) : null;
+  const end = endDate ? new Date(endDate) : null;
+  
+  if (start) start.setHours(0, 0, 0, 0);
+  if (end) end.setHours(23, 59, 59, 999);
+
+  if (start && dateOnly < start) return false;
+  if (end && dateOnly > end) return false;
+  
+  return true;
+};
+
+const getCurrentWeekDates = () => {
+  const now = new Date();
+  const startOfWeek = new Date(now);
+  startOfWeek.setDate(now.getDate() - now.getDay());
+  const endOfWeek = new Date(now);
+  endOfWeek.setDate(now.getDate() + (6 - now.getDay()));
+  
+  return {
+    startDate: startOfWeek.toISOString().split('T')[0],
+    endDate: endOfWeek.toISOString().split('T')[0]
+  };
+};
+
+const getCurrentMonthDates = () => {
+  const now = new Date();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  
+  return {
+    startDate: startOfMonth.toISOString().split('T')[0],
+    endDate: endOfMonth.toISOString().split('T')[0]
+  };
+};
+
+// Custom hook for data processing
+const useProcessedData = (
+  allFarmers: Farmer[], 
+  trainingRecords: TrainingRecord[], 
+  offtakeData: OfftakeData[], 
+  dateRange: { startDate: string; endDate: string }, 
+  timeFrame: 'weekly' | 'monthly' | 'yearly'
+) => {
+  return useMemo(() => {
     if (allFarmers.length === 0) {
       return {
         filteredData: [],
+        filteredOfftakeData: [],
         genderData: [],
         trainedGenderData: [],
         registrationTrendData: [],
@@ -154,46 +194,34 @@ const PerformanceReport = () => {
     }
 
     // Filter data based on date range
-    const filtered = allFarmers.filter(farmer => {
-      if (!dateRange.startDate && !dateRange.endDate) return true;
-      
-      const farmerDate = parseDate(farmer.dateSubmitted || farmer.createdAt || farmer.date);
-      if (!farmerDate) return false;
+    const filteredData = allFarmers.filter(farmer => 
+      isDateInRange(farmer.dateSubmitted || farmer.createdAt || farmer.date, dateRange.startDate, dateRange.endDate)
+    );
 
-      const farmerDateOnly = new Date(farmerDate);
-      farmerDateOnly.setHours(0, 0, 0, 0);
-
-      const start = dateRange.startDate ? new Date(dateRange.startDate) : null;
-      const end = dateRange.endDate ? new Date(dateRange.endDate) : null;
-      
-      if (start) start.setHours(0, 0, 0, 0);
-      if (end) end.setHours(23, 59, 59, 999);
-
-      if (start && farmerDateOnly < start) return false;
-      if (end && farmerDateOnly > end) return false;
-      
-      return true;
-    });
+    const filteredOfftakeData = offtakeData.filter(record => 
+      isDateInRange(record.date, dateRange.startDate, dateRange.endDate)
+    );
 
     // Calculate basic stats
-    const maleFarmers = filtered.filter(f => String(f.gender || f.Gender).toLowerCase() === 'male').length;
-    const femaleFarmers = filtered.filter(f => String(f.gender || f.Gender).toLowerCase() === 'female').length;
+    const maleFarmers = filteredData.filter(f => String(f.gender || f.Gender).toLowerCase() === 'male').length;
+    const femaleFarmers = filteredData.filter(f => String(f.gender || f.Gender).toLowerCase() === 'female').length;
     
-    const trainedMale = filtered.filter(farmer => 
-      checkIfFarmerTrained(farmer, trainingRecords) && String(farmer.gender || farmer.Gender).toLowerCase() === 'male'
-    ).length;
-    const trainedFemale = filtered.filter(farmer => 
-      checkIfFarmerTrained(farmer, trainingRecords) && String(farmer.gender || farmer.Gender).toLowerCase() === 'female'
+    const trainedMale = filteredData.filter(farmer => 
+      isFarmerTrained(farmer, trainingRecords) && String(farmer.gender || farmer.Gender).toLowerCase() === 'male'
     ).length;
     
-    const totalAnimals = filtered.reduce((sum, farmer) => 
-      sum + parseInt(farmer.goatsMale || farmer.GoatsMale || farmer.maleGoats || 0) + 
-          parseInt(farmer.goatsFemale || farmer.GoatsFemale || farmer.femaleGoats || 0), 0
+    const trainedFemale = filteredData.filter(farmer => 
+      isFarmerTrained(farmer, trainingRecords) && String(farmer.gender || farmer.Gender).toLowerCase() === 'female'
+    ).length;
+    
+    const totalAnimals = filteredData.reduce((sum, farmer) => 
+      sum + getNumberField(farmer, "goatsMale", "GoatsMale", "maleGoats") + 
+          getNumberField(farmer, "goatsFemale", "GoatsFemale", "femaleGoats"), 0
     );
 
     // Region Statistics
     const regionMap: Record<string, number> = {};
-    filtered.forEach(farmer => {
+    filteredData.forEach(farmer => {
       const region = farmer.region || farmer.Region || farmer.county || farmer.County || 'Unknown';
       regionMap[region] = (regionMap[region] || 0) + 1;
     });
@@ -207,22 +235,20 @@ const PerformanceReport = () => {
       ? farmersPerRegion.reduce((sum, region) => sum + region.farmers, 0) / farmersPerRegion.length 
       : 0;
 
-    // Calculate regional performance percentage
-    const totalFarmersInTopRegion = topPerformingRegion.farmers;
-    const regionalPerformancePercentage = totalFarmersInTopRegion > 0 
-      ? (totalFarmersInTopRegion / filtered.length) * 100 
+    const regionalPerformancePercentage = topPerformingRegion.farmers > 0 
+      ? (topPerformingRegion.farmers / filteredData.length) * 100 
       : 0;
 
     // Breed Distribution Statistics
     const breedDistribution = {
-      newBreedFemales: filtered.reduce((sum, farmer) => sum + getNumberField(farmer, "newBreedFemales", "newBreedFemale"), 0),
-      newBreedMales: filtered.reduce((sum, farmer) => sum + getNumberField(farmer, "newBreedMales", "newBreedMale"), 0),
-      newBreedYoung: filtered.reduce((sum, farmer) => sum + getNumberField(farmer, "newBreedYoung", "newBreedYoungs"), 0)
+      newBreedFemales: filteredData.reduce((sum, farmer) => sum + getNumberField(farmer, "newBreedFemales", "newBreedFemale"), 0),
+      newBreedMales: filteredData.reduce((sum, farmer) => sum + getNumberField(farmer, "newBreedMales", "newBreedMale"), 0),
+      newBreedYoung: filteredData.reduce((sum, farmer) => sum + getNumberField(farmer, "newBreedYoung", "newBreedYoungs"), 0)
     };
 
     const totalBreedsDistributed = breedDistribution.newBreedFemales + breedDistribution.newBreedMales + breedDistribution.newBreedYoung;
     
-    const farmersReceivingBreeds = filtered.filter(farmer => 
+    const farmersReceivingBreeds = filteredData.filter(farmer => 
       getNumberField(farmer, "numberOfBreeds", "NumberOfBreeds", "breeds", "totalBreeds") > 0 ||
       getNumberField(farmer, "newBreedFemales", "newBreedFemale") > 0 ||
       getNumberField(farmer, "newBreedMales", "newBreedMale") > 0 ||
@@ -230,7 +256,7 @@ const PerformanceReport = () => {
     ).length;
 
     // Vaccination Statistics
-    const vaccinatedAnimals = filtered.reduce((sum, farmer) => 
+    const vaccinatedAnimals = filteredData.reduce((sum, farmer) => 
       sum + getNumberField(farmer, "vaccinatedAnimals", "vaccinated", "animalsVaccinated"), 0
     );
     
@@ -247,7 +273,7 @@ const PerformanceReport = () => {
       }
     }
 
-    // Generate trend data based on time frame
+    // Generate trend data
     const generateTrendData = () => {
       const trendData: any[] = [];
       
@@ -258,7 +284,7 @@ const PerformanceReport = () => {
           const weekEnd = new Date(weekStart);
           weekEnd.setDate(weekStart.getDate() + 6);
           
-          const weekRegistrations = filtered.filter(farmer => {
+          const weekRegistrations = filteredData.filter(farmer => {
             const farmerDate = parseDate(farmer.dateSubmitted || farmer.createdAt || farmer.date);
             return farmerDate && farmerDate >= weekStart && farmerDate <= weekEnd;
           }).length;
@@ -266,7 +292,7 @@ const PerformanceReport = () => {
           trendData.push({
             name: `Week ${week}`,
             registrations: weekRegistrations,
-            target: Math.round(filtered.length / 4)
+            target: Math.round(filteredData.length / 4)
           });
         }
       } else if (timeFrame === 'monthly') {
@@ -275,7 +301,7 @@ const PerformanceReport = () => {
           const monthStart = new Date(2024, index, 1);
           const monthEnd = new Date(2024, index + 1, 0);
           
-          const monthRegistrations = filtered.filter(farmer => {
+          const monthRegistrations = filteredData.filter(farmer => {
             const farmerDate = parseDate(farmer.dateSubmitted || farmer.createdAt || farmer.date);
             return farmerDate && farmerDate >= monthStart && farmerDate <= monthEnd;
           }).length;
@@ -283,7 +309,7 @@ const PerformanceReport = () => {
           trendData.push({
             name: month,
             registrations: monthRegistrations,
-            target: Math.round(filtered.length / 12)
+            target: Math.round(filteredData.length / 12)
           });
         });
       } else {
@@ -292,7 +318,7 @@ const PerformanceReport = () => {
           const yearStart = new Date(year, 0, 1);
           const yearEnd = new Date(year, 11, 31);
           
-          const yearRegistrations = filtered.filter(farmer => {
+          const yearRegistrations = filteredData.filter(farmer => {
             const farmerDate = parseDate(farmer.dateSubmitted || farmer.createdAt || farmer.date);
             return farmerDate && farmerDate >= yearStart && farmerDate <= yearEnd;
           }).length;
@@ -300,7 +326,7 @@ const PerformanceReport = () => {
           trendData.push({
             name: year.toString(),
             registrations: yearRegistrations,
-            target: Math.round(filtered.length / 5)
+            target: Math.round(filteredData.length / 5)
           });
         }
       }
@@ -312,7 +338,7 @@ const PerformanceReport = () => {
     const generateTopOfftakeFarmers = () => {
       const farmerSales: Record<string, number> = {};
       
-      offtakeData.forEach(record => {
+      filteredOfftakeData.forEach(record => {
         const farmerKey = record.farmerName || record.idNumber;
         if (farmerKey) {
           farmerSales[farmerKey] = (farmerSales[farmerKey] || 0) + record.noSheepGoats;
@@ -328,7 +354,7 @@ const PerformanceReport = () => {
     const generateTopLocations = () => {
       const locationSales: Record<string, number> = {};
       
-      offtakeData.forEach(record => {
+      filteredOfftakeData.forEach(record => {
         const location = record.location || 'Unknown';
         locationSales[location] = (locationSales[location] || 0) + record.noSheepGoats;
       });
@@ -344,7 +370,8 @@ const PerformanceReport = () => {
     const topLocs = generateTopLocations();
 
     return {
-      filteredData: filtered,
+      filteredData,
+      filteredOfftakeData,
       genderData: [
         { name: "Male", value: maleFarmers, color: COLORS.darkBlue },
         { name: "Female", value: femaleFarmers, color: COLORS.orange },
@@ -357,14 +384,14 @@ const PerformanceReport = () => {
       topOfftakeFarmers: topFarmers,
       topLocations: topLocs,
       stats: {
-        totalFarmers: filtered.length,
+        totalFarmers: filteredData.length,
         maleFarmers,
         femaleFarmers,
         totalAnimals,
         trainedFarmers: trainedMale + trainedFemale,
         trainedMale,
         trainedFemale,
-        offtakeParticipants: offtakeData.length
+        offtakeParticipants: filteredOfftakeData.length
       },
       regionStats: {
         totalRegions: farmersPerRegion.length,
@@ -387,7 +414,81 @@ const PerformanceReport = () => {
         comment: vaccinationComment
       }
     };
-  }, [allFarmers, dateRange, timeFrame, trainingRecords, offtakeData]);
+  }, [allFarmers, trainingRecords, offtakeData, dateRange, timeFrame]);
+};
+
+// Stats Card Component
+const StatsCard = ({ title, value, icon: Icon, description, color = "blue", children }: any) => (
+  <Card className="relative overflow-hidden group hover:shadow-xl transition-all duration-300 border-0 bg-gradient-to-br from-white to-gray-50">
+    <div className={`absolute left-0 top-0 bottom-0 w-1 ${
+      color === 'blue' ? 'bg-blue-500' :
+      color === 'orange' ? 'bg-orange-500' :
+      color === 'yellow' ? 'bg-yellow-500' :
+      color === 'green' ? 'bg-green-500' :
+      color === 'red' ? 'bg-red-500' : 
+      color === 'purple' ? 'bg-purple-500' :
+      color === 'teal' ? 'bg-teal-500' : 'bg-blue-500'
+    }`}></div>
+    
+    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 pt-4 pl-6">
+      <CardTitle className="text-sm font-medium text-gray-600">{title}</CardTitle>
+      <div className={`p-2 rounded-xl ${
+        color === 'blue' ? 'bg-blue-100' :
+        color === 'orange' ? 'bg-orange-100' :
+        color === 'yellow' ? 'bg-yellow-100' :
+        color === 'green' ? 'bg-green-100' :
+        color === 'red' ? 'bg-red-100' : 
+        color === 'purple' ? 'bg-purple-100' :
+        color === 'teal' ? 'bg-teal-100' : 'bg-blue-100'
+      } shadow-sm`}>
+        <Icon className={`h-4 w-4 ${
+          color === 'blue' ? 'text-blue-600' :
+          color === 'orange' ? 'text-orange-600' :
+          color === 'yellow' ? 'text-yellow-600' :
+          color === 'green' ? 'text-green-600' :
+          color === 'red' ? 'text-red-600' : 
+          color === 'purple' ? 'text-purple-600' :
+          color === 'teal' ? 'text-teal-600' : 'text-blue-600'
+        }`} />
+      </div>
+    </CardHeader>
+    <CardContent className="pl-6 pb-4">
+      <div className="text-2xl font-bold text-gray-900">{value}</div>
+      {description && (
+        <p className="text-xs text-gray-500 mt-2 font-medium">
+          {description}
+        </p>
+      )}
+      {children}
+    </CardContent>
+  </Card>
+);
+
+const PerformanceReport = () => {
+  const [loading, setLoading] = useState(true);
+  const [allFarmers, setAllFarmers] = useState<Farmer[]>([]);
+  const [trainingRecords, setTrainingRecords] = useState<TrainingRecord[]>([]);
+  const [offtakeData, setOfftakeData] = useState<OfftakeData[]>([]);
+  const [dateRange, setDateRange] = useState({
+    startDate: "",
+    endDate: ""
+  });
+  const [timeFrame, setTimeFrame] = useState<'weekly' | 'monthly' | 'yearly'>('monthly');
+
+  // Use the custom hook for processed data
+  const {
+    filteredData,
+    filteredOfftakeData,
+    genderData,
+    trainedGenderData,
+    registrationTrendData,
+    topOfftakeFarmers,
+    topLocations,
+    stats,
+    regionStats,
+    breedStats,
+    vaccinationStats
+  } = useProcessedData(allFarmers, trainingRecords, offtakeData, dateRange, timeFrame);
 
   // Fetch all data on component mount
   useEffect(() => {
@@ -398,7 +499,6 @@ const PerformanceReport = () => {
     try {
       setLoading(true);
       
-      // Fetch all data in parallel
       const [farmersSnapshot, trainingSnapshot, offtakeSnapshot] = await Promise.all([
         getDocs(query(collection(db, "Livestock Farmers"))),
         getDocs(query(collection(db, "Capacity Building"))),
@@ -440,7 +540,7 @@ const PerformanceReport = () => {
     }
   };
 
-  const getPerformanceRecommendation = () => {
+  const getPerformanceRecommendation = useCallback(() => {
     if (registrationTrendData.length === 0) return { text: "No data available", color: "gray" };
     
     const currentRegistrations = registrationTrendData[registrationTrendData.length - 1]?.registrations || 0;
@@ -453,46 +553,30 @@ const PerformanceReport = () => {
     } else {
       return { text: "Poor Performance - Immediate Action Required", color: "red" };
     }
-  };
+  }, [registrationTrendData]);
 
-  const handleDateRangeChange = (key: string, value: string) => {
+  const handleDateRangeChange = useCallback((key: string, value: string) => {
     setDateRange(prev => ({ ...prev, [key]: value }));
-  };
+  }, []);
 
-  const setWeekFilter = () => {
-    const now = new Date();
-    const startOfWeek = new Date(now);
-    startOfWeek.setDate(now.getDate() - now.getDay());
-    const endOfWeek = new Date(now);
-    endOfWeek.setDate(now.getDate() + (6 - now.getDay()));
-    
-    setDateRange({
-      startDate: startOfWeek.toISOString().split('T')[0],
-      endDate: endOfWeek.toISOString().split('T')[0]
-    });
+  const setWeekFilter = useCallback(() => {
+    setDateRange(getCurrentWeekDates());
     setTimeFrame('weekly');
-  };
+  }, []);
 
-  const setMonthFilter = () => {
-    const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-    
-    setDateRange({
-      startDate: startOfMonth.toISOString().split('T')[0],
-      endDate: endOfMonth.toISOString().split('T')[0]
-    });
+  const setMonthFilter = useCallback(() => {
+    setDateRange(getCurrentMonthDates());
     setTimeFrame('monthly');
-  };
+  }, []);
 
-  const clearFilters = () => {
+  const clearFilters = useCallback(() => {
     setDateRange({ startDate: "", endDate: "" });
     setTimeFrame('monthly');
-  };
+  }, []);
 
-  const setTimeFrameFilter = (frame: 'weekly' | 'monthly' | 'yearly') => {
+  const setTimeFrameFilter = useCallback((frame: 'weekly' | 'monthly' | 'yearly') => {
     setTimeFrame(frame);
-  };
+  }, []);
 
   // Custom label renderer for doughnut charts
   const renderCustomizedLabel = useCallback(({
@@ -519,53 +603,6 @@ const PerformanceReport = () => {
       </text>
     );
   }, []);
-
-  // Stats Card Component
-  const StatsCard = ({ title, value, icon: Icon, description, color = "blue", children }: any) => (
-    <Card className="relative overflow-hidden group hover:shadow-xl transition-all duration-300 border-0 bg-gradient-to-br from-white to-gray-50">
-      <div className={`absolute left-0 top-0 bottom-0 w-1 ${
-        color === 'blue' ? 'bg-blue-500' :
-        color === 'orange' ? 'bg-orange-500' :
-        color === 'yellow' ? 'bg-yellow-500' :
-        color === 'green' ? 'bg-green-500' :
-        color === 'red' ? 'bg-red-500' : 
-        color === 'purple' ? 'bg-purple-500' :
-        color === 'teal' ? 'bg-teal-500' : 'bg-blue-500'
-      }`}></div>
-      
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 pt-4 pl-6">
-        <CardTitle className="text-sm font-medium text-gray-600">{title}</CardTitle>
-        <div className={`p-2 rounded-xl ${
-          color === 'blue' ? 'bg-blue-100' :
-          color === 'orange' ? 'bg-orange-100' :
-          color === 'yellow' ? 'bg-yellow-100' :
-          color === 'green' ? 'bg-green-100' :
-          color === 'red' ? 'bg-red-100' : 
-          color === 'purple' ? 'bg-purple-100' :
-          color === 'teal' ? 'bg-teal-100' : 'bg-blue-100'
-        } shadow-sm`}>
-          <Icon className={`h-4 w-4 ${
-            color === 'blue' ? 'text-blue-600' :
-            color === 'orange' ? 'text-orange-600' :
-            color === 'yellow' ? 'text-yellow-600' :
-            color === 'green' ? 'text-green-600' :
-            color === 'red' ? 'text-red-600' : 
-            color === 'purple' ? 'text-purple-600' :
-            color === 'teal' ? 'text-teal-600' : 'text-blue-600'
-          }`} />
-        </div>
-      </CardHeader>
-      <CardContent className="-2 pl-6 pb-4">
-        <div className=" grid grid-cols-2 text-2xl font-bold text-gray-900">{value}</div>
-        {description && (
-          <p className=" grid grid-cols-2 text-xs text-gray-500 mt-2 font-medium">
-            {description}
-          </p>
-        )}
-        {children}
-      </CardContent>
-    </Card>
-  );
 
   if (loading) {
     return (
@@ -660,7 +697,7 @@ const PerformanceReport = () => {
           color="green"
         />
 
-        {/* Regional Performance Card with detailed region breakdown */}
+        {/* Regional Performance Card */}
         <StatsCard 
           title="Regional Coverage" 
           value={regionStats.totalRegions} 
@@ -669,7 +706,7 @@ const PerformanceReport = () => {
         >
           <div className="mt-3">
             <div className="grid grid-cols-2 gap-1.5 max-h-24 overflow-y-auto">
-              {regionStats.farmersPerRegion.slice(0, 8).map((region, index) => (
+              {regionStats.farmersPerRegion.slice(0, 8).map((region) => (
                 <div 
                   key={region.name} 
                   className="flex flex-col-2 gap-2 bg-gray-50 rounded border border-gray-100 hover:bg-gray-100 transition-colors"

@@ -9,9 +9,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
-import { Download, Users, MapPin, Eye, Calendar, Sprout, Globe, LayoutGrid, Edit, Trash2 } from "lucide-react";
+import { Download, Users, MapPin, Eye, Calendar, Sprout, Globe, LayoutGrid, Edit, Trash2, Upload } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { isChiefAdmin } from "./onboardingpage";
+import { uploadDataWithValidation, formatValidationErrors, UploadResult } from "@/lib/uploads-util";
 
 // Types
 interface FodderFarmer {
@@ -114,11 +115,17 @@ const FodderFarmersPage = () => {
   const [filteredFodder, setFilteredFodder] = useState<FodderFarmer[]>([]);
   const [loading, setLoading] = useState(true);
   const [exportLoading, setExportLoading] = useState(false);
+  const [uploadLoading, setUploadLoading] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
   const [selectedRecords, setSelectedRecords] = useState<string[]>([]);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
+  const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [viewingRecord, setViewingRecord] = useState<FodderFarmer | null>(null);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
   
   const searchTimeoutRef = useRef<NodeJS.Timeout>();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const currentMonth = useMemo(getCurrentMonthDates, []);
 
   const [filters, setFilters] = useState<Filters>({
@@ -214,6 +221,138 @@ const FodderFarmersPage = () => {
       setLoading(false);
     }
   }, [toast]);
+
+  // File upload handlers
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      setUploadFile(file);
+    }
+  };
+
+  const handleUpload = async () => {
+    if (!uploadFile) {
+      toast({
+        title: "No File Selected",
+        description: "Please select a file to upload",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setUploadLoading(true);
+      
+      const result: UploadResult = await uploadDataWithValidation(uploadFile, 'fodder');
+
+      if (result.success) {
+        toast({
+          title: "Upload Successful",
+          description: result.message,
+        });
+        
+        // Refresh data
+        fetchAllData();
+      } else {
+        // Show detailed validation errors
+        let errorMessage = result.message;
+        
+        if (result.validationErrors && result.validationErrors.length > 0) {
+          errorMessage += '\n\n' + formatValidationErrors(result.validationErrors);
+          
+          toast({
+            title: "Data Schema Mismatch",
+            description: (
+              <div className="max-h-60 overflow-y-auto">
+                <p className="font-semibold mb-2">Please update your data to match the database schema:</p>
+                <pre className="text-sm whitespace-pre-wrap">{errorMessage}</pre>
+              </div>
+            ),
+            variant: "destructive",
+            duration: 10000, // Show for longer
+          });
+        } else {
+          toast({
+            title: "Upload Failed",
+            description: result.message,
+            variant: "destructive",
+          });
+        }
+      }
+
+      // Reset file input
+      setUploadFile(null);
+      setIsUploadDialogOpen(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+
+    } catch (error) {
+      console.error('Error uploading file:', error);
+      toast({
+        title: "Upload Failed",
+        description: "An unexpected error occurred",
+        variant: "destructive",
+      });
+    } finally {
+      setUploadLoading(false);
+    }
+  };
+
+  // Delete multiple records
+  const handleDeleteMultiple = async () => {
+    if (selectedRecords.length === 0) {
+      toast({
+        title: "No Records Selected",
+        description: "Please select records to delete",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setDeleteLoading(true);
+      
+      // Since we're using fetchData utility, we need to handle deletion differently
+      // For now, we'll show a message that this feature is coming soon
+      // In a real implementation, you would call a delete API endpoint
+      
+      toast({
+        title: "Delete Feature",
+        description: `Bulk delete functionality for ${selectedRecords.length} records will be implemented soon`,
+        variant: "default",
+      });
+
+      // Clear selection after "deletion"
+      setSelectedRecords([]);
+      setIsDeleteConfirmOpen(false);
+      
+      // In a real implementation, you would refresh data here
+      // fetchAllData();
+
+    } catch (error) {
+      console.error("Error deleting records:", error);
+      toast({
+        title: "Error",
+        description: "Failed to delete records",
+        variant: "destructive",
+      });
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+  const openDeleteConfirm = () => {
+    if (selectedRecords.length === 0) {
+      toast({
+        title: "No Records Selected",
+        description: "Please select records to delete",
+        variant: "destructive",
+      });
+      return;
+    }
+    setIsDeleteConfirmOpen(true);
+  };
 
   // Filter application - memoized to prevent unnecessary re-renders
   const applyFilters = useCallback(() => {
@@ -653,7 +792,7 @@ const FodderFarmersPage = () => {
               </Button>
             )}
             {/* Delete button - only for chief admin */}
-            {isChiefAdmin(userRole)  && (
+            {userIsChiefAdmin && (
               <Button
                 variant="outline"
                 size="sm"
@@ -680,6 +819,20 @@ const FodderFarmersPage = () => {
         </div>
 
         <div className="flex flex-wrap gap-2">
+          {/* Bulk Actions */}
+          {selectedRecords.length > 0 && userIsChiefAdmin && (
+            <Button 
+              variant="destructive" 
+              size="sm" 
+              onClick={openDeleteConfirm}
+              disabled={deleteLoading}
+              className="text-xs"
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              Delete ({selectedRecords.length})
+            </Button>
+          )}
+          
           <Button 
             variant="outline" 
             size="sm" 
@@ -696,16 +849,28 @@ const FodderFarmersPage = () => {
           >
             This Month
           </Button>
-          {/* Export button - only for chief admin */}
+
+          {/* Upload and Export buttons - only for chief admin */}
           {userIsChiefAdmin && (
-            <Button 
-              onClick={handleExport} 
-              disabled={exportLoading || filteredFodder.length === 0}
-              className="bg-gradient-to-r from-green-600 to-emerald-700 hover:from-green-700 hover:to-emerald-800 text-white shadow-md text-xs"
-            >
-              <Download className="h-4 w-4 mr-2" />
-              {exportLoading ? "Exporting..." : `Export (${filteredFodder.length})`}
-            </Button>
+            <>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => setIsUploadDialogOpen(true)}
+                className="text-xs border-green-300 hover:bg-green-50 text-green-700"
+              >
+                <Upload className="h-4 w-4 mr-2" />
+                Upload Data
+              </Button>
+              <Button 
+                onClick={handleExport} 
+                disabled={exportLoading || filteredFodder.length === 0}
+                className="bg-gradient-to-r from-green-600 to-emerald-700 hover:from-green-700 hover:to-emerald-800 text-white shadow-md text-xs"
+              >
+                <Download className="h-4 w-4 mr-2" />
+                {exportLoading ? "Exporting..." : `Export (${filteredFodder.length})`}
+              </Button>
+            </>
           )}
         </div>
       </div>
@@ -815,6 +980,137 @@ const FodderFarmersPage = () => {
           )}
         </CardContent>
       </Card>
+
+      {/* Upload Data Dialog */}
+      <Dialog open={isUploadDialogOpen} onOpenChange={setIsUploadDialogOpen}>
+        <DialogContent className="sm:max-w-md bg-white rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-slate-900">
+              <Upload className="h-5 w-5 text-green-600" />
+              Upload Fodder Farmers Data
+            </DialogTitle>
+            <DialogDescription>
+              Upload data from CSV or JSON files. The file should contain fodder farmer records.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="file-upload">Select File</Label>
+              <Input
+                id="file-upload"
+                ref={fileInputRef}
+                type="file"
+                accept=".csv,.json"
+                onChange={handleFileSelect}
+                className="bg-white border-slate-300"
+              />
+              <p className="text-xs text-slate-500">
+                Supported formats: CSV, JSON. Maximum file size: 10MB
+              </p>
+            </div>
+            
+            {uploadFile && (
+              <div className="bg-slate-50 rounded-lg p-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium text-slate-900">{uploadFile.name}</p>
+                    <p className="text-sm text-slate-500">
+                      {(uploadFile.size / 1024 / 1024).toFixed(2)} MB
+                    </p>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setUploadFile(null);
+                      if (fileInputRef.current) {
+                        fileInputRef.current.value = '';
+                      }
+                    }}
+                    className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setIsUploadDialogOpen(false);
+                setUploadFile(null);
+                if (fileInputRef.current) {
+                  fileInputRef.current.value = '';
+                }
+              }}
+              className="border-slate-300"
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleUpload} 
+              disabled={!uploadFile || uploadLoading}
+              className="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white"
+            >
+              {uploadLoading ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  Uploading...
+                </>
+              ) : (
+                <>
+                  <Upload className="h-4 w-4 mr-2" />
+                  Upload Data
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
+        <DialogContent className="sm:max-w-md bg-white rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-slate-900">
+              <Trash2 className="h-5 w-5 text-red-600" />
+              Confirm Deletion
+            </DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete {selectedRecords.length} selected records? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => setIsDeleteConfirmOpen(false)}
+              className="border-slate-300"
+            >
+              Cancel
+            </Button>
+            <Button 
+              variant="destructive"
+              onClick={handleDeleteMultiple}
+              disabled={deleteLoading}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              {deleteLoading ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  Deleting...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete {selectedRecords.length} Records
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* View Record Dialog */}
       <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>

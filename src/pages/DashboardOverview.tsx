@@ -416,8 +416,8 @@ const DashboardOverview = () => {
         {/* Header with Notification Bell */}
         <div className="flex justify-between items-center">
           <div>
-            <h1 className="text-3xl font-bold text-slate-900">Dashboard Overview</h1>
-            <p className="text-slate-600 mt-2">Welcome back! Here's what's happening today.</p>
+            <h1 className="text-md font-bold text-slate-900">Dashboard Overview</h1>
+        
           </div>
           <Link to="/activities">
             <Button variant="outline" className="relative">

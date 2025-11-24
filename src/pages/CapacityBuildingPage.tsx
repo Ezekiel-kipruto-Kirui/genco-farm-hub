@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { collection, getDocs, query, updateDoc, doc, deleteDoc, writeBatch } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -10,9 +10,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
-import { Download, Users, BookOpen, Edit, Trash2, Calendar, Eye, X, MapPin, GraduationCap } from "lucide-react";
+import { Download, Users, BookOpen, Edit, Trash2, Calendar, Eye, X, MapPin, GraduationCap, Upload } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { isChiefAdmin } from "./onboardingpage";
+import { uploadDataWithValidation, formatValidationErrors, UploadResult } from "@/lib/uploads-util";
 
 // Types
 interface TrainingRecord {
@@ -32,7 +33,6 @@ interface Filters {
   gender: string;
   startDate: string;
   endDate: string;
-  
   modules: string;
   region: string;
 }
@@ -41,7 +41,6 @@ interface Stats {
   totalRecords: number;
   maleParticipants: number;
   femaleParticipants: number;
-
   totalModules: number;
 }
 
@@ -133,17 +132,23 @@ const CapacityBuildingPage = () => {
   const [filteredRecords, setFilteredRecords] = useState<TrainingRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [exportLoading, setExportLoading] = useState(false);
+  const [uploadLoading, setUploadLoading] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
   const [selectedRecords, setSelectedRecords] = useState<string[]>([]);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
+  const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [viewingRecord, setViewingRecord] = useState<TrainingRecord | null>(null);
   const [editingRecord, setEditingRecord] = useState<TrainingRecord | null>(null);
-  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
   
-     const userIsChiefAdmin = useMemo(() => {
-        return isChiefAdmin(userRole);
-    }, [userRole]);
+  const userIsChiefAdmin = useMemo(() => {
+    return isChiefAdmin(userRole);
+  }, [userRole]);
+  
   const currentMonth = useMemo(getCurrentMonthDates, []);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Separate search state with debouncing
   const [searchValue, setSearchValue] = useState("");
@@ -153,7 +158,6 @@ const CapacityBuildingPage = () => {
     gender: "all",
     startDate: currentMonth.startDate,
     endDate: currentMonth.endDate,
-    
     modules: "all",
     region: "all"
   });
@@ -162,7 +166,6 @@ const CapacityBuildingPage = () => {
     totalRecords: 0,
     maleParticipants: 0,
     femaleParticipants: 0,
-   
     totalModules: 0
   });
 
@@ -222,6 +225,160 @@ const CapacityBuildingPage = () => {
     }
   }, [toast]);
 
+  // File upload handlers
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      setUploadFile(file);
+    }
+  };
+
+  const handleUpload = async () => {
+    if (!uploadFile) {
+      toast({
+        title: "No File Selected",
+        description: "Please select a file to upload",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setUploadLoading(true);
+      
+      const result: UploadResult = await uploadDataWithValidation(uploadFile, 'Capacity Building');
+
+      if (result.success) {
+        toast({
+          title: "Upload Successful",
+          description: result.message,
+        });
+        
+        // Refresh data
+        fetchAllData();
+      } else {
+        // Show detailed validation errors
+        let errorMessage = result.message;
+        
+        if (result.validationErrors && result.validationErrors.length > 0) {
+          errorMessage += '\n\n' + formatValidationErrors(result.validationErrors);
+          
+          toast({
+            title: "Data Schema Mismatch",
+            description: (
+              <div className="max-h-60 overflow-y-auto">
+                <p className="font-semibold mb-2">Please update your data to match the database schema:</p>
+                <pre className="text-sm whitespace-pre-wrap">{errorMessage}</pre>
+              </div>
+            ),
+            variant: "destructive",
+            duration: 10000, // Show for longer
+          });
+        } else {
+          toast({
+            title: "Upload Failed",
+            description: result.message,
+            variant: "destructive",
+          });
+        }
+      }
+
+      // Reset file input
+      setUploadFile(null);
+      setIsUploadDialogOpen(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+
+    } catch (error) {
+      console.error('Error uploading file:', error);
+      toast({
+        title: "Upload Failed",
+        description: "An unexpected error occurred",
+        variant: "destructive",
+      });
+    } finally {
+      setUploadLoading(false);
+    }
+  };
+
+  // Delete multiple records
+  const handleDeleteMultiple = async () => {
+    if (selectedRecords.length === 0) {
+      toast({
+        title: "No Records Selected",
+        description: "Please select records to delete",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setDeleteLoading(true);
+      const batch = writeBatch(db);
+
+      selectedRecords.forEach(recordId => {
+        const docRef = doc(db, "Capacity Building", recordId);
+        batch.delete(docRef);
+      });
+
+      await batch.commit();
+
+      toast({
+        title: "Success",
+        description: `Deleted ${selectedRecords.length} records successfully`,
+      });
+
+      setSelectedRecords([]);
+      setIsDeleteConfirmOpen(false);
+      fetchAllData();
+    } catch (error) {
+      console.error("Error deleting records:", error);
+      toast({
+        title: "Error",
+        description: "Failed to delete records",
+        variant: "destructive",
+      });
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+  const openDeleteConfirm = () => {
+    if (selectedRecords.length === 0) {
+      toast({
+        title: "No Records Selected",
+        description: "Please select records to delete",
+        variant: "destructive",
+      });
+      return;
+    }
+    setIsDeleteConfirmOpen(true);
+  };
+
+  // Delete single record
+  const handleDeleteSingle = useCallback(async (recordId: string) => {
+    try {
+      await deleteDoc(doc(db, "Capacity Building", recordId));
+
+      toast({
+        title: "Success",
+        description: "Record deleted successfully",
+      });
+
+      // Remove from selected records if it was selected
+      setSelectedRecords(prev => prev.filter(id => id !== recordId));
+      fetchAllData();
+    } catch (error) {
+      console.error("Error deleting record:", error);
+      toast({
+        title: "Error",
+        description: "Failed to delete record",
+        variant: "destructive",
+      });
+    }
+  }, [fetchAllData, toast]);
+
   // Main filtering logic - completely separated from state updates
   const filterAndProcessData = useCallback((records: TrainingRecord[], searchTerm: string, filterParams: Omit<Filters, 'search'>) => {
     const filtered = records.filter(record => {
@@ -234,9 +391,6 @@ const CapacityBuildingPage = () => {
       if (filterParams.region !== "all" && record.region?.toLowerCase() !== filterParams.region.toLowerCase()) {
         return false;
       }
-
-      // Location filter (dependent on region)
-    
 
       // Modules filter
       if (filterParams.modules !== "all" && record.Modules?.toLowerCase() !== filterParams.modules.toLowerCase()) {
@@ -276,14 +430,12 @@ const CapacityBuildingPage = () => {
     // Calculate stats
     const maleParticipants = filtered.filter(r => r.Gender?.toLowerCase() === 'male').length;
     const femaleParticipants = filtered.filter(r => r.Gender?.toLowerCase() === 'female').length;
-    const uniqueLocations = new Set(filtered.map(r => r.Location).filter(Boolean)).size;
     const totalModules = new Set(filtered.map(r => r.Modules).filter(Boolean)).size;
 
     const calculatedStats = {
       totalRecords: filtered.length,
       maleParticipants,
       femaleParticipants,
-      uniqueLocations,
       totalModules
     };
 
@@ -487,39 +639,6 @@ const CapacityBuildingPage = () => {
     }
   }, [editingRecord, editForm, fetchAllData, toast]);
 
-  const handleDeleteSelected = useCallback(async () => {
-    if (selectedRecords.length === 0) return;
-
-    try {
-      setDeleteLoading(true);
-      const batch = writeBatch(db);
-
-      selectedRecords.forEach(recordId => {
-        const docRef = doc(db, "Capacity Building", recordId);
-        batch.delete(docRef);
-      });
-
-      await batch.commit();
-
-      toast({
-        title: "Success",
-        description: `Deleted ${selectedRecords.length} records successfully`,
-      });
-
-      setSelectedRecords([]);
-      fetchAllData();
-    } catch (error) {
-      console.error("Error deleting records:", error);
-      toast({
-        title: "Error",
-        description: "Failed to delete records",
-        variant: "destructive",
-      });
-    } finally {
-      setDeleteLoading(false);
-    }
-  }, [selectedRecords, fetchAllData, toast]);
-
   // Memoized values
   const uniqueRegions = useMemo(() => 
     [...new Set(allRecords.map(r => r.region).filter(Boolean))],
@@ -557,7 +676,6 @@ const CapacityBuildingPage = () => {
       gender: "all",
       startDate: "",
       endDate: "",
-    
       modules: "all",
       region: "all"
     });
@@ -648,8 +766,6 @@ const CapacityBuildingPage = () => {
         </Select>
       </div>
 
-    
-
       <div className="space-y-2">
         <Label htmlFor="modules" className="font-semibold text-gray-700">Modules</Label>
         <Select value={filters.modules} onValueChange={(value) => handleFilterChange("modules", value)}>
@@ -699,7 +815,7 @@ const CapacityBuildingPage = () => {
       </td>
       <td className="py-2 px-4 text-sm">{formatDate(record.date || record.timestamp)}</td>
       <td className="py-2 px-4 text-sm">{record.Name || 'N/A'}</td>
-      <td className="py-2 px- text-sm">{record.Gender || 'N/A'}</td>
+      <td className="py-2 px-4 text-sm">{record.Gender || 'N/A'}</td>
       <td className="py-2 px-4 text-sm text-gray-600">{record.Phone || 'N/A'}</td>
       <td className="py-2 px-4 text-sm">{record.Location || 'N/A'}</td>
       <td className="py-2 px-4 text-sm">{record.region || 'N/A'}</td>
@@ -714,7 +830,7 @@ const CapacityBuildingPage = () => {
           >
             <Eye className="h-3 w-3 text-green-500" />
           </Button>
-          {userRole === "chief-admin" && (
+          {userIsChiefAdmin && (
             <>
               <Button
                 variant="outline"
@@ -727,7 +843,7 @@ const CapacityBuildingPage = () => {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => handleSelectRecord(record.id)}
+                onClick={() => handleDeleteSingle(record.id)}
                 className="h-5 w-5 p-0 hover:bg-red-50 hover:text-red-600 border-red-200"
               >
                 <Trash2 className="h-3 w-3 text-red-500" />
@@ -737,7 +853,7 @@ const CapacityBuildingPage = () => {
         </div>
       </td>
     </tr>
-  ), [selectedRecords, handleSelectRecord, openViewDialog, openEditDialog, userRole]);
+  ), [selectedRecords, handleSelectRecord, openViewDialog, openEditDialog, handleDeleteSingle, userIsChiefAdmin]);
 
   return (
     <div className="space-y-6">
@@ -750,6 +866,20 @@ const CapacityBuildingPage = () => {
         </div>
 
         <div className="flex flex-wrap gap-2">
+          {/* Bulk Actions */}
+          {selectedRecords.length > 0 && userIsChiefAdmin && (
+            <Button 
+              variant="destructive" 
+              size="sm" 
+              onClick={openDeleteConfirm}
+              disabled={deleteLoading}
+              className="text-xs"
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              Delete ({selectedRecords.length})
+            </Button>
+          )}
+          
           <Button 
             variant="outline" 
             size="sm" 
@@ -766,18 +896,28 @@ const CapacityBuildingPage = () => {
           >
             This Month
           </Button>
-     {isChiefAdmin(userRole) && (
-       <Button 
-            onClick={handleExport} 
-            disabled={exportLoading || filteredRecords.length === 0}
-            className="bg-gradient-to-r from-blue-800 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white shadow-md text-xs"
-          >
-            <Download className="h-4 w-4 mr-2" />
-            {exportLoading ? "Exporting..." : `Export (${filteredRecords.length})`}
-          </Button>
-     )}
 
-         
+          {userIsChiefAdmin && (
+            <>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => setIsUploadDialogOpen(true)}
+                className="text-xs border-green-300 hover:bg-green-50 text-green-700"
+              >
+                <Upload className="h-4 w-4 mr-2" />
+                Upload Data
+              </Button>
+              <Button 
+                onClick={handleExport} 
+                disabled={exportLoading || filteredRecords.length === 0}
+                className="bg-gradient-to-r from-blue-800 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white shadow-md text-xs"
+              >
+                <Download className="h-4 w-4 mr-2" />
+                {exportLoading ? "Exporting..." : `Export (${filteredRecords.length})`}
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
@@ -789,9 +929,6 @@ const CapacityBuildingPage = () => {
           icon={Users}
         >
           <div className="flex gap-4 justify-between text-xs text-slate-600 mt-2">
-           
-         
-       
             <span>Male {(stats.maleParticipants > 0 ? (stats.maleParticipants / stats.totalRecords * 100).toFixed(1) : '0')}%</span>
             <span>Female {(stats.femaleParticipants > 0 ? (stats.femaleParticipants / stats.totalRecords * 100).toFixed(1) : '0')}%</span>
           </div>
@@ -892,6 +1029,137 @@ const CapacityBuildingPage = () => {
         </CardContent>
       </Card>
 
+      {/* Upload Data Dialog */}
+      <Dialog open={isUploadDialogOpen} onOpenChange={setIsUploadDialogOpen}>
+        <DialogContent className="sm:max-w-md bg-white rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-slate-900">
+              <Upload className="h-5 w-5 text-green-600" />
+              Upload Capacity Building Data
+            </DialogTitle>
+            <DialogDescription>
+              Upload data from CSV or JSON files. The file should contain training records.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="file-upload">Select File</Label>
+              <Input
+                id="file-upload"
+                ref={fileInputRef}
+                type="file"
+                accept=".csv,.json"
+                onChange={handleFileSelect}
+                className="bg-white border-slate-300"
+              />
+              <p className="text-xs text-slate-500">
+                Supported formats: CSV, JSON. Maximum file size: 10MB
+              </p>
+            </div>
+            
+            {uploadFile && (
+              <div className="bg-slate-50 rounded-lg p-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium text-slate-900">{uploadFile.name}</p>
+                    <p className="text-sm text-slate-500">
+                      {(uploadFile.size / 1024 / 1024).toFixed(2)} MB
+                    </p>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setUploadFile(null);
+                      if (fileInputRef.current) {
+                        fileInputRef.current.value = '';
+                      }
+                    }}
+                    className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setIsUploadDialogOpen(false);
+                setUploadFile(null);
+                if (fileInputRef.current) {
+                  fileInputRef.current.value = '';
+                }
+              }}
+              className="border-slate-300"
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleUpload} 
+              disabled={!uploadFile || uploadLoading}
+              className="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white"
+            >
+              {uploadLoading ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  Uploading...
+                </>
+              ) : (
+                <>
+                  <Upload className="h-4 w-4 mr-2" />
+                  Upload Data
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
+        <DialogContent className="sm:max-w-md bg-white rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-slate-900">
+              <Trash2 className="h-5 w-5 text-red-600" />
+              Confirm Deletion
+            </DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete {selectedRecords.length} selected records? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => setIsDeleteConfirmOpen(false)}
+              className="border-slate-300"
+            >
+              Cancel
+            </Button>
+            <Button 
+              variant="destructive"
+              onClick={handleDeleteMultiple}
+              disabled={deleteLoading}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              {deleteLoading ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  Deleting...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete {selectedRecords.length} Records
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* View Record Dialog */}
       <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
         <DialogContent className="sm:max-w-2xl bg-white rounded-2xl">
@@ -975,7 +1243,7 @@ const CapacityBuildingPage = () => {
       </Dialog>
 
       {/* Edit Dialog */}
-      {userRole === "chief-admin" && (
+      {userIsChiefAdmin && (
         <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
           <DialogContent className="sm:max-w-md bg-white rounded-2xl">
             <DialogHeader>
@@ -1073,7 +1341,6 @@ const CapacityBuildingPage = () => {
           </DialogContent>
         </Dialog>
       )}
-
     </div>
   );
 };

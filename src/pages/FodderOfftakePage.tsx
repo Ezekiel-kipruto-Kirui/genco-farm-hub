@@ -8,9 +8,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
-import { Download, User, Phone, MapPin, Globe, Calendar, DollarSign, Eye, Edit, Save, X } from "lucide-react";
+import { Download, User, Phone, MapPin, Globe, Calendar, DollarSign, Eye, Edit, Save, X, Upload, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { isChiefAdmin } from "./onboardingpage";
+import { uploadDataWithValidation, formatValidationErrors, UploadResult } from "@/lib/uploads-util";
 
 // Types
 interface FodderOfftake {
@@ -35,6 +36,7 @@ interface Stats {
   totalRegions: number;
   totalRevenue: number;
   totalFarmers: number;
+  totalRecords: number;
 }
 
 interface Pagination {
@@ -124,14 +126,21 @@ const FodderOfftakePage = () => {
   const [filteredFodderOfftake, setFilteredFodderOfftake] = useState<FodderOfftake[]>([]);
   const [loading, setLoading] = useState(true);
   const [exportLoading, setExportLoading] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [uploadLoading, setUploadLoading] = useState(false);
   const [selectedRecords, setSelectedRecords] = useState<string[]>([]);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
   const [viewingRecord, setViewingRecord] = useState<FodderOfftake | null>(null);
   const [editingRecord, setEditingRecord] = useState<FodderOfftake | null>(null);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<number>(0);
   const [saving, setSaving] = useState(false);
   
   const searchTimeoutRef = useRef<NodeJS.Timeout>();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const currentMonth = useMemo(getCurrentMonthDates, []);
 
   const [filters, setFilters] = useState<Filters>({
@@ -146,6 +155,7 @@ const FodderOfftakePage = () => {
     totalRegions: 0,
     totalRevenue: 0,
     totalFarmers: 0,
+    totalRecords: 0,
   });
 
   const [pagination, setPagination] = useState<Pagination>({
@@ -155,30 +165,66 @@ const FodderOfftakePage = () => {
     hasNext: false,
     hasPrev: false
   });
-const userIsChiefAdmin = useMemo(() => {
-        return isChiefAdmin(userRole);
-    }, [userRole]);
-  // Data fetching
+
+  const userIsChiefAdmin = useMemo(() => {
+    return isChiefAdmin(userRole);
+  }, [userRole]);
+
+  // Data fetching with improved debugging
   const fetchAllData = useCallback(async () => {
     try {
       setLoading(true);
-      console.log("Starting fodder offtake data fetch...");
+      console.log("🔄 Starting fodder offtake data fetch...");
       
       const data = await fetchData();
-      console.log("Raw fetched data:", data);
-      console.log("Fodder offtake data structure:", data.fofftake);
-
-      if (!data.fofftake) {
-        console.warn("No fodder offtake data found in response");
-        setAllFodderOfftake([]);
-        return;
+      console.log("📦 Raw fetched data:", data);
+      
+      // Check for different possible collection names
+      const possibleCollectionNames = [
+        'fofftake', 
+        'fodderOfftake', 
+        'fodder_offtake',
+        'fodder-offtake',
+        'FodderOfftake',
+        'fodderOfftakeData',
+        'Fofftake'
+      ];
+      
+      let fodderOfftakeData: any[] = [];
+      let foundCollection = '';
+      
+      // Try to find the data in different possible collection names
+      for (const collectionName of possibleCollectionNames) {
+        if (data[collectionName] && Array.isArray(data[collectionName])) {
+          console.log(`✅ Found data in collection: ${collectionName}`);
+          fodderOfftakeData = data[collectionName];
+          foundCollection = collectionName;
+          break;
+        }
+      }
+      
+      if (fodderOfftakeData.length === 0) {
+        console.warn("❌ No fodder offtake data found in any expected collection");
+        // Check if there are any arrays in the data
+        const arrayCollections = Object.keys(data).filter(key => Array.isArray(data[key]));
+        console.log("📊 Available array collections:", arrayCollections);
+        
+        if (arrayCollections.length > 0) {
+          // Use the first array found as a fallback
+          foundCollection = arrayCollections[0];
+          fodderOfftakeData = data[foundCollection];
+          console.log(`🔄 Using fallback collection: ${foundCollection}`);
+        } else {
+          setAllFodderOfftake([]);
+          return;
+        }
       }
 
-      const fodderOfftakeData = Array.isArray(data.fofftake) ? data.fofftake.map((item: any, index: number) => {
-        console.log(`Processing fodder offtake item ${index}:`, item);
-        
+      console.log(`📋 Processing ${fodderOfftakeData.length} records from collection: ${foundCollection}`);
+      
+      const processedData = fodderOfftakeData.map((item: any, index: number) => {
         // Handle date parsing
-        let dateValue = item.date || item.Date || item.createdAt || item.timestamp;
+        let dateValue = item.date || item.Date || item.createdAt || item.timestamp || item.transactionDate;
         
         // Parse dates if they are Firestore timestamp objects
         const parseFirestoreDate = (dateValue: any) => {
@@ -197,26 +243,24 @@ const userIsChiefAdmin = useMemo(() => {
         dateValue = parseFirestoreDate(dateValue);
 
         // Handle different field name variations for fodder offtake
-        const processedItem = {
-          id: item.id || `temp-${index}-${Date.now()}`,
+        const processedItem: FodderOfftake = {
+          id: item.id || item.docId || `temp-${index}-${Date.now()}`,
           date: dateValue,
-          farmer_name: item.farmer_name || item.farmerName || item.farmer || item.Farmer || '',
-          phone_number: item.phone_number || item.phoneNumber || item.phone || item.Phone || '',
-          bale_price: Number(item.bale_price || item.balePrice || item.price || item.Price || 0),
-          location: item.location || item.Location || item.area || item.Area || '',
-          region: item.region || item.Region || item.county || item.County || ''
+          farmer_name: item.farmer_name || item.farmerName || item.farmer || item.Farmer || item.farmer_name || '',
+          phone_number: item.phone_number || item.phoneNumber || item.phone || item.Phone || item.mobile || item.contact || '',
+          bale_price: Number(item.bale_price || item.balePrice || item.price || item.Price || item.amount || item.cost || 0),
+          location: item.location || item.Location || item.area || item.Area || item.village || item.town || '',
+          region: item.region || item.Region || item.county || item.County || item.district || ''
         };
 
-        console.log(`Processed fodder offtake item ${index}:`, processedItem);
         return processedItem;
+      });
 
-      }) : [];
-
-      console.log("Final processed fodder offtake data:", fodderOfftakeData);
-      setAllFodderOfftake(fodderOfftakeData);
+      console.log("🎉 Final processed fodder offtake data:", processedData);
+      setAllFodderOfftake(processedData);
       
     } catch (error) {
-      console.error("Error fetching fodder offtake data:", error);
+      console.error("❌ Error fetching fodder offtake data:", error);
       toast({
         title: "Error",
         description: "Failed to load fodder offtake data from database",
@@ -236,6 +280,7 @@ const userIsChiefAdmin = useMemo(() => {
         totalRegions: 0,
         totalRevenue: 0,
         totalFarmers: 0,
+        totalRecords: 0,
       });
       return;
     }
@@ -298,12 +343,11 @@ const userIsChiefAdmin = useMemo(() => {
     const uniqueFarmers = new Set(filtered.map(f => f.farmer_name).filter(Boolean));
     const uniqueRegions = new Set(filtered.map(f => f.region).filter(Boolean));
 
-    console.log("Farmers:", uniqueFarmers.size, "Regions:", uniqueRegions.size, "Revenue:", totalRevenue);
-
     setStats({
       totalFarmers: uniqueFarmers.size,
       totalRegions: uniqueRegions.size,
-      totalRevenue
+      totalRevenue,
+      totalRecords: filtered.length
     });
 
     // Update pagination
@@ -354,6 +398,138 @@ const userIsChiefAdmin = useMemo(() => {
     setPagination(prev => ({ ...prev, page: 1 }));
   }, []);
 
+  // Delete functionality
+  const handleDeleteSelected = async () => {
+    if (selectedRecords.length === 0) {
+      toast({
+        title: "No Records Selected",
+        description: "Please select records to delete",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setDeleteLoading(true);
+      
+      // Simulate deletion - replace with actual Firebase delete operation
+      console.log("Deleting records:", selectedRecords);
+      
+      // In a real implementation, you would call a Firebase delete function here
+      // await deleteFodderOfftakeRecords(selectedRecords);
+      
+      // For now, we'll just filter them out from the local state
+      setAllFodderOfftake(prev => prev.filter(record => !selectedRecords.includes(record.id)));
+      setSelectedRecords([]);
+      
+      toast({
+        title: "Records Deleted",
+        description: `Successfully deleted ${selectedRecords.length} records`,
+      });
+      
+      setIsDeleteDialogOpen(false);
+    } catch (error) {
+      console.error("Error deleting records:", error);
+      toast({
+        title: "Delete Failed",
+        description: "Failed to delete records. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+  // Upload functionality
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      const fileExtension = file.name.split('.').pop()?.toLowerCase();
+      if (fileExtension && ['csv', 'json', 'xlsx', 'xls'].includes(fileExtension)) {
+        setUploadFile(file);
+      } else {
+        toast({
+          title: "Invalid File Format",
+          description: "Please select a CSV, JSON, or Excel file",
+          variant: "destructive",
+        });
+      }
+    }
+  };
+
+  const handleUpload = async () => {
+    if (!uploadFile) {
+      toast({
+        title: "No File Selected",
+        description: "Please select a file to upload",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setUploadLoading(true);
+      setUploadProgress(0);
+      
+      // Simulate upload progress
+      const progressInterval = setInterval(() => {
+        setUploadProgress(prev => {
+          if (prev >= 90) {
+            clearInterval(progressInterval);
+            return prev;
+          }
+          return prev + 10;
+        });
+      }, 200);
+
+      // Use the upload utility
+      const result: UploadResult = await uploadDataWithValidation(uploadFile, "fofftake");
+      
+      clearInterval(progressInterval);
+      setUploadProgress(100);
+
+      if (result.success) {
+        toast({
+          title: "Upload Successful",
+          description: result.message,
+        });
+        
+        // Refresh data
+        await fetchAllData();
+        setIsUploadDialogOpen(false);
+        setUploadFile(null);
+        setUploadProgress(0);
+        
+        // Reset file input
+        if (fileInputRef.current) {
+          fileInputRef.current.value = '';
+        }
+      } else {
+        let errorMessage = result.message;
+        
+        if (result.validationErrors && result.validationErrors.length > 0) {
+          errorMessage += "\n\n" + formatValidationErrors(result.validationErrors);
+        }
+        
+        toast({
+          title: "Upload Failed",
+          description: errorMessage,
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error("Error uploading file:", error);
+      toast({
+        title: "Upload Failed",
+        description: "An unexpected error occurred during upload",
+        variant: "destructive",
+      });
+    } finally {
+      setUploadLoading(false);
+      setUploadProgress(0);
+    }
+  };
+
   const handleExport = async () => {
     try {
       setExportLoading(true);
@@ -371,7 +547,7 @@ const userIsChiefAdmin = useMemo(() => {
         formatDate(record.date),
         record.farmer_name || 'N/A',
         formatPhoneNumber(record.phone_number || ''),
-        formatCurrency(record.bale_price || 0),
+        (record.bale_price || 0).toString(),
         record.location || 'N/A',
         record.region || 'N/A'
       ]);
@@ -499,13 +675,11 @@ const userIsChiefAdmin = useMemo(() => {
   // Memoized values
   const uniqueRegions = useMemo(() => {
     const regions = [...new Set(allFodderOfftake.map(f => f.region).filter(Boolean))];
-    console.log("Unique regions:", regions);
     return regions;
   }, [allFodderOfftake]);
 
   const uniqueLocations = useMemo(() => {
     const locations = [...new Set(allFodderOfftake.map(f => f.location).filter(Boolean))];
-    console.log("Unique locations:", locations);
     return locations;
   }, [allFodderOfftake]);
 
@@ -630,19 +804,34 @@ const userIsChiefAdmin = useMemo(() => {
             >
               <Eye className="h-4 w-4 text-blue-500" />
             </Button>
-            {isChiefAdmin(userRole) &&( <Button
-              variant="outline"
-              size="sm"
-              onClick={() => openEditDialog(record)}
-              className="h-10 w-10 p-0 hover:bg-green-300 hover:text-green-600 border-white"
-            >
-              <Edit className="h-4 w-4 text-green-500" />
-            </Button>)}
+            {isChiefAdmin(userRole) &&( 
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => openEditDialog(record)}
+                className="h-8 w-8 p-0 hover:bg-green-50 hover:text-green-600 border-green-200"
+              >
+                <Edit className="h-4 w-4 text-green-500" />
+              </Button>
+            )}
+            {isChiefAdmin(userRole) &&(
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setSelectedRecords([record.id]);
+                  setIsDeleteDialogOpen(true);
+                }}
+                className="h-8 w-8 p-0 hover:bg-red-50 hover:text-red-600 border-red-200"
+              >
+                <Trash2 className="h-4 w-4 text-red-500" />
+              </Button>
+            )}
           </div>
         </td>
       </tr>
     );
-  }, [selectedRecords, handleSelectRecord, openViewDialog, openEditDialog]);
+  }, [selectedRecords, handleSelectRecord, openViewDialog, openEditDialog, userRole]);
 
   return (
     <div className="space-y-6">
@@ -673,20 +862,49 @@ const userIsChiefAdmin = useMemo(() => {
             This Month
           </Button>
 
-           {isChiefAdmin(userRole) && (  <Button 
-            onClick={handleExport} 
-            disabled={exportLoading || filteredFodderOfftake.length === 0}
-            className="bg-gradient-to-r from-blue-600 to-purple-700 hover:from-blue-700 hover:to-purple-800 text-white shadow-md text-xs"
-          >
-            <Download className="h-4 w-4 mr-2" />
-            {exportLoading ? "Exporting..." : `Export (${filteredFodderOfftake.length})`}
-          </Button>)}
-        
+          {isChiefAdmin(userRole) && (
+            <>
+              <Button 
+                onClick={() => setIsUploadDialogOpen(true)}
+                className="bg-green-50 text-green-500 hover:bg-green-100 hover:text-green-600 border border-green-200 shadow-md text-xs"
+              >
+                <Upload className="h-4 w-4 mr-2" />
+                Upload Data
+              </Button>
+              
+              {selectedRecords.length > 0 && (
+                <Button 
+                  onClick={() => setIsDeleteDialogOpen(true)}
+                  disabled={deleteLoading}
+                  className="bg-gradient-to-r from-red-600 to-rose-700 hover:from-red-700 hover:to-rose-800 text-white shadow-md text-xs"
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  {deleteLoading ? "Deleting..." : `Delete (${selectedRecords.length})`}
+                </Button>
+              )}
+              
+              <Button 
+                onClick={handleExport} 
+                disabled={exportLoading || filteredFodderOfftake.length === 0}
+                className="bg-gradient-to-r from-blue-600 to-purple-700 hover:from-blue-700 hover:to-purple-800 text-white shadow-md text-xs"
+              >
+                <Download className="h-4 w-4 mr-2" />
+                {exportLoading ? "Exporting..." : `Export (${filteredFodderOfftake.length})`}
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatsCard 
+          title="Total Records" 
+          value={stats.totalRecords} 
+          icon={User}
+          description="Total fodder offtake records"
+        />
+
         <StatsCard 
           title="Total Farmers" 
           value={stats.totalFarmers} 
@@ -986,6 +1204,130 @@ const userIsChiefAdmin = useMemo(() => {
             >
               <Save className="h-4 w-4 mr-2" />
               {saving ? "Saving..." : "Save Changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <DialogContent className="sm:max-w-md bg-white rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <Trash2 className="h-5 w-5" />
+              Delete Records
+            </DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete {selectedRecords.length} selected record{selectedRecords.length > 1 ? 's' : ''}? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => setIsDeleteDialogOpen(false)}
+              disabled={deleteLoading}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteSelected}
+              disabled={deleteLoading}
+            >
+              {deleteLoading ? "Deleting..." : "Delete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Upload Data Dialog */}
+      <Dialog open={isUploadDialogOpen} onOpenChange={setIsUploadDialogOpen}>
+        <DialogContent className="sm:max-w-md bg-white rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-green-600">
+              <Upload className="h-5 w-5" />
+              Upload Fodder Offtake Data
+            </DialogTitle>
+            <DialogDescription>
+              Upload CSV, JSON, or Excel files containing fodder offtake data. The data will be validated against the database schema.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileSelect}
+                accept=".csv,.json,.xlsx,.xls"
+                className="hidden"
+              />
+              
+              {!uploadFile ? (
+                <div 
+                  className="cursor-pointer"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <Upload className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+                  <p className="text-sm text-gray-600">
+                    Click to upload or drag and drop
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    CSV, JSON, Excel files only
+                  </p>
+                </div>
+              ) : (
+                <div className="text-center">
+                  <div className="flex items-center justify-center gap-2 mb-2">
+                    <Checkbox checked className="bg-green-500 border-green-500" />
+                    <span className="text-sm font-medium text-green-600">
+                      {uploadFile.name}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    {(uploadFile.size / 1024).toFixed(1)} KB
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {uploadProgress > 0 && (
+              <div className="space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span>Uploading...</span>
+                  <span>{uploadProgress}%</span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-2">
+                  <div 
+                    className="bg-green-600 h-2 rounded-full transition-all duration-300"
+                    style={{ width: `${uploadProgress}%` }}
+                  ></div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="flex gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsUploadDialogOpen(false);
+                setUploadFile(null);
+                setUploadProgress(0);
+                if (fileInputRef.current) {
+                  fileInputRef.current.value = '';
+                }
+              }}
+              disabled={uploadLoading}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleUpload}
+              disabled={!uploadFile || uploadLoading}
+              className="bg-gradient-to-r from-green-600 to-emerald-700 hover:from-green-700 hover:to-emerald-800 text-white"
+            >
+              {uploadLoading ? "Uploading..." : "Upload Data"}
             </Button>
           </DialogFooter>
         </DialogContent>

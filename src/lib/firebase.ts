@@ -1,29 +1,35 @@
 import { initializeApp } from "firebase/app";
-import { getFirestore,collection,
-    getDocs,
-    query, } from "firebase/firestore";
+import {
+  getFirestore,
+  collection,
+  getDocs,
+  query,
+} from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 import { getAnalytics } from "firebase/analytics";
 
-
+// Load from .env (must use VITE_ prefix)
 const firebaseConfig = {
-  apiKey: "AIzaSyD8_g861hnTB35O9ZPuUqsQN1C8M_i9voY",
-  authDomain: "genco-company.firebaseapp.com",
-  projectId: "genco-company",
-  storageBucket: "genco-company.appspot.com",
-  messagingSenderId: "941079884478",
-  appId: "1:941079884478:web:38a203fa4b588a620a64ef",
-  measurementId: "G-RS4R639KKY",
+  apiKey: import.meta.env.VITE_API_KEY,
+  authDomain: import.meta.env.VITE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_APP_ID,
+  measurementId: import.meta.env.VITE_MEASUREMENT_ID,
 };
 
+// Initialize services
 export const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 export const auth = getAuth(app);
-export const analytics = getAnalytics(app);
 
+// Prevent analytics crash in non-browser environments
+export const analytics =
+  typeof window !== "undefined" ? getAnalytics(app) : null;
 
-// Helper function to fetch data from Firestore
-export const fetchCollection = async (collectionName) => {
+// Helper function to fetch any collection
+export const fetchCollection = async (collectionName: string) => {
   try {
     const q = query(collection(db, collectionName));
     const querySnapshot = await getDocs(q);
@@ -37,25 +43,41 @@ export const fetchCollection = async (collectionName) => {
   }
 };
 
-
-// Fetch data from specific collections
+// Fetch all your collections at once
 export const fetchData = async () => {
-    try {
-        const [livestock, fodder,infrastructure,BoreholeStorage,  capacity, lofftake, fofftake, users] = await Promise.all([
-            fetchCollection("Livestock Farmers"),
-            fetchCollection("Fodder Farmers"),
-            fetchCollection("Infrastructure Data"),
-            fetchCollection("BoreholeStorage"),
-            fetchCollection("Capacity Building"),
-            fetchCollection("Livestock Offtake Data"),
-            fetchCollection("Fodder Offtake Data"),
-            fetchCollection("users"), // Fetch users collection
-          
-        ]);
+  try {
+    const [
+      livestock,
+      fodder,
+      infrastructure,
+      BoreholeStorage,
+      capacity,
+      lofftake,
+      fofftake,
+      users,
+    ] = await Promise.all([
+      fetchCollection("Livestock Farmers"),
+      fetchCollection("Fodder Farmers"),
+      fetchCollection("Infrastructure Data"),
+      fetchCollection("BoreholeStorage"),
+      fetchCollection("Capacity Building"),
+      fetchCollection("Livestock Offtake Data"),
+      fetchCollection("Fodder Offtake Data"),
+      fetchCollection("users"),
+    ]);
 
-        return { livestock, fodder, infrastructure,BoreholeStorage, capacity, lofftake, fofftake, users};
-    } catch (error) {
-        console.error("Error fetching all data:", error);
-        throw error;
-    }
+    return {
+      livestock,
+      fodder,
+      infrastructure,
+      BoreholeStorage,
+      capacity,
+      lofftake,
+      fofftake,
+      users,
+    };
+  } catch (error) {
+    console.error("Error fetching all data:", error);
+    throw error;
+  }
 };

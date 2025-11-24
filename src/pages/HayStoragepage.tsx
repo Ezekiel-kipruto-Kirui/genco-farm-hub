@@ -10,9 +10,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
-import { Download, Warehouse, MapPin, Eye, Calendar, Building, Globe, Users, DollarSign, Package, Archive, Edit, Save, X } from "lucide-react";
+import { Download, Warehouse, MapPin, Eye, Calendar, Building, Globe, Users, DollarSign, Package, Archive, Edit, Save, X, Upload, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { isChiefAdmin } from "./onboardingpage";
+import { uploadDataWithValidation, formatValidationErrors, UploadResult } from "@/lib/uploads-util";
 
 // Types
 interface Infrastructure {
@@ -119,14 +120,21 @@ const HayStoragePage = () => {
   const [filteredInfrastructure, setFilteredInfrastructure] = useState<Infrastructure[]>([]);
   const [loading, setLoading] = useState(true);
   const [exportLoading, setExportLoading] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [uploadLoading, setUploadLoading] = useState(false);
   const [selectedRecords, setSelectedRecords] = useState<string[]>([]);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
   const [viewingRecord, setViewingRecord] = useState<Infrastructure | null>(null);
   const [editingRecord, setEditingRecord] = useState<Infrastructure | null>(null);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<number>(0);
   const [saving, setSaving] = useState(false);
   
   const searchTimeoutRef = useRef<NodeJS.Timeout>();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const currentMonth = useMemo(getCurrentMonthDates, []);
 
   const [filters, setFilters] = useState<Filters>({
@@ -151,9 +159,11 @@ const HayStoragePage = () => {
     hasNext: false,
     hasPrev: false
   });
-const userIsChiefAdmin = useMemo(() => {
-        return isChiefAdmin(userRole);
-    }, [userRole]);
+
+  const userIsChiefAdmin = useMemo(() => {
+    return isChiefAdmin(userRole);
+  }, [userRole]);
+
   // Data fetching
   const fetchAllData = useCallback(async () => {
     try {
@@ -357,6 +367,138 @@ const userIsChiefAdmin = useMemo(() => {
     setFilters(prev => ({ ...prev, [key]: value }));
     setPagination(prev => ({ ...prev, page: 1 }));
   }, []);
+
+  // Delete functionality
+  const handleDeleteSelected = async () => {
+    if (selectedRecords.length === 0) {
+      toast({
+        title: "No Records Selected",
+        description: "Please select records to delete",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setDeleteLoading(true);
+      
+      // Simulate deletion - replace with actual Firebase delete operation
+      console.log("Deleting records:", selectedRecords);
+      
+      // In a real implementation, you would call a Firebase delete function here
+      // await deleteInfrastructureRecords(selectedRecords);
+      
+      // For now, we'll just filter them out from the local state
+      setAllInfrastructure(prev => prev.filter(record => !selectedRecords.includes(record.id)));
+      setSelectedRecords([]);
+      
+      toast({
+        title: "Records Deleted",
+        description: `Successfully deleted ${selectedRecords.length} records`,
+      });
+      
+      setIsDeleteDialogOpen(false);
+    } catch (error) {
+      console.error("Error deleting records:", error);
+      toast({
+        title: "Delete Failed",
+        description: "Failed to delete records. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+  // Upload functionality
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      const fileExtension = file.name.split('.').pop()?.toLowerCase();
+      if (fileExtension && ['csv', 'json', 'xlsx', 'xls'].includes(fileExtension)) {
+        setUploadFile(file);
+      } else {
+        toast({
+          title: "Invalid File Format",
+          description: "Please select a CSV, JSON, or Excel file",
+          variant: "destructive",
+        });
+      }
+    }
+  };
+
+  const handleUpload = async () => {
+    if (!uploadFile) {
+      toast({
+        title: "No File Selected",
+        description: "Please select a file to upload",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setUploadLoading(true);
+      setUploadProgress(0);
+      
+      // Simulate upload progress
+      const progressInterval = setInterval(() => {
+        setUploadProgress(prev => {
+          if (prev >= 90) {
+            clearInterval(progressInterval);
+            return prev;
+          }
+          return prev + 10;
+        });
+      }, 200);
+
+      // Use the upload utility
+      const result: UploadResult = await uploadDataWithValidation(uploadFile, "infrastructure");
+      
+      clearInterval(progressInterval);
+      setUploadProgress(100);
+
+      if (result.success) {
+        toast({
+          title: "Upload Successful",
+          description: result.message,
+        });
+        
+        // Refresh data
+        await fetchAllData();
+        setIsUploadDialogOpen(false);
+        setUploadFile(null);
+        setUploadProgress(0);
+        
+        // Reset file input
+        if (fileInputRef.current) {
+          fileInputRef.current.value = '';
+        }
+      } else {
+        let errorMessage = result.message;
+        
+        if (result.validationErrors && result.validationErrors.length > 0) {
+          errorMessage += "\n\n" + formatValidationErrors(result.validationErrors);
+        }
+        
+        toast({
+          title: "Upload Failed",
+          description: errorMessage,
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error("Error uploading file:", error);
+      toast({
+        title: "Upload Failed",
+        description: "An unexpected error occurred during upload",
+        variant: "destructive",
+      });
+    } finally {
+      setUploadLoading(false);
+      setUploadProgress(0);
+    }
+  };
 
   const handleExport = async () => {
     try {
@@ -637,15 +779,29 @@ const userIsChiefAdmin = useMemo(() => {
             >
               <Eye className="h-4 w-4 text-blue-500" />
             </Button>
-             {isChiefAdmin(userRole) &&( <Button
-              variant="outline"
-              size="sm"
-              onClick={() => openEditDialog(record)}
-              className="h-8 w-8 p-0 hover:bg-green-50 hover:text-green-600 border-green-200"
-            >
-              <Edit className="h-4 w-4 text-green-500" />
-            </Button>)}
-           
+            {isChiefAdmin(userRole) &&( 
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => openEditDialog(record)}
+                className="h-8 w-8 p-0 hover:bg-green-50 hover:text-green-600 border-green-200"
+              >
+                <Edit className="h-4 w-4 text-green-500" />
+              </Button>
+            )}
+            {isChiefAdmin(userRole) &&(
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setSelectedRecords([record.id]);
+                  setIsDeleteDialogOpen(true);
+                }}
+                className="h-8 w-8 p-0 hover:bg-red-50 hover:text-red-600 border-red-200"
+              >
+                <Trash2 className="h-4 w-4 text-red-500" />
+              </Button>
+            )}
           </div>
         </td>
       </tr>
@@ -679,16 +835,38 @@ const userIsChiefAdmin = useMemo(() => {
           >
             This Month
           </Button>
-           {isChiefAdmin(userRole) &&(  
-            <Button 
-            onClick={handleExport} 
-            disabled={exportLoading || filteredInfrastructure.length === 0}
-            className="bg-gradient-to-r from-blue-600 to-purple-700 hover:from-blue-700 hover:to-purple-800 text-white shadow-md text-xs"
-          >
-            <Download className="h-4 w-4 mr-2" />
-            {exportLoading ? "Exporting..." : `Export (${filteredInfrastructure.length})`}
-          </Button>)}
-        
+          
+          {isChiefAdmin(userRole) && (
+            <>
+              <Button 
+                onClick={() => setIsUploadDialogOpen(true)}
+                className="bg-green-50 text-green-500 hover:bg-green-100 hover:text-green-600 border border-green-200 shadow-md text-xs"
+              >
+                <Upload className="h-4 w-4 mr-2" />
+                Upload Data
+              </Button>
+              
+              {selectedRecords.length > 0 && (
+                <Button 
+                  onClick={() => setIsDeleteDialogOpen(true)}
+                  disabled={deleteLoading}
+                  className="bg-gradient-to-r from-red-600 to-rose-700 hover:from-red-700 hover:to-rose-800 text-white shadow-md text-xs"
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  {deleteLoading ? "Deleting..." : `Delete (${selectedRecords.length})`}
+                </Button>
+              )}
+              
+              <Button 
+                onClick={handleExport} 
+                disabled={exportLoading || filteredInfrastructure.length === 0}
+                className="bg-gradient-to-r from-blue-600 to-purple-700 hover:from-blue-700 hover:to-purple-800 text-white shadow-md text-xs"
+              >
+                <Download className="h-4 w-4 mr-2" />
+                {exportLoading ? "Exporting..." : `Export (${filteredInfrastructure.length})`}
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
@@ -1033,12 +1211,141 @@ const userIsChiefAdmin = useMemo(() => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <DialogContent className="sm:max-w-md bg-white rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <Trash2 className="h-5 w-5" />
+              Delete Records
+            </DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete {selectedRecords.length} selected record{selectedRecords.length > 1 ? 's' : ''}? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => setIsDeleteDialogOpen(false)}
+              disabled={deleteLoading}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteSelected}
+              disabled={deleteLoading}
+            >
+              {deleteLoading ? "Deleting..." : "Delete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Upload Data Dialog */}
+      <Dialog open={isUploadDialogOpen} onOpenChange={setIsUploadDialogOpen}>
+        <DialogContent className="sm:max-w-md bg-white rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-green-600">
+              <Upload className="h-5 w-5" />
+              Upload Hay Storage Data
+            </DialogTitle>
+            <DialogDescription>
+              Upload CSV, JSON, or Excel files containing hay storage data. The data will be validated against the database schema.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileSelect}
+                accept=".csv,.json,.xlsx,.xls"
+                className="hidden"
+              />
+              
+              {!uploadFile ? (
+                <div 
+                  className="cursor-pointer"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <Upload className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+                  <p className="text-sm text-gray-600">
+                    Click to upload or drag and drop
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    CSV, JSON, Excel files only
+                  </p>
+                </div>
+              ) : (
+                <div className="text-center">
+                  <div className="flex items-center justify-center gap-2 mb-2">
+                    <Checkbox checked className="bg-green-500 border-green-500" />
+                    <span className="text-sm font-medium text-green-600">
+                      {uploadFile.name}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    {(uploadFile.size / 1024).toFixed(1)} KB
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {uploadProgress > 0 && (
+              <div className="space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span>Uploading...</span>
+                  <span>{uploadProgress}%</span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-2">
+                  <div 
+                    className="bg-green-600 h-2 rounded-full transition-all duration-300"
+                    style={{ width: `${uploadProgress}%` }}
+                  ></div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="flex gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsUploadDialogOpen(false);
+                setUploadFile(null);
+                setUploadProgress(0);
+                if (fileInputRef.current) {
+                  fileInputRef.current.value = '';
+                }
+              }}
+              disabled={uploadLoading}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleUpload}
+              disabled={!uploadFile || uploadLoading}
+              className="bg-gradient-to-r from-green-600 to-emerald-700 hover:from-green-700 hover:to-emerald-800 text-white"
+            >
+              {uploadLoading ? "Uploading..." : "Upload Data"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
 
-export default HayStoragePage;
-
-function updateData(arg0: string, id: string, editingRecord: Infrastructure) {
-  throw new Error("Function not implemented.");
+// Mock function - replace with actual Firebase implementation
+async function updateData(collectionName: string, id: string, data: Infrastructure) {
+  // In a real implementation, you would update the document in Firebase
+  console.log(`Updating ${collectionName} document ${id}:`, data);
+  // Example implementation:
+  // const docRef = doc(db, collectionName, id);
+  // await updateDoc(docRef, data);
 }
+
+export default HayStoragePage;

@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
-import { Download, Users, Edit, Trash2, GraduationCap, Eye, MapPin, Upload, Plus, Calendar, X, UserPlus, User, Phone, Map, FileText, MessageSquare, BookOpen, Heart, Zap, Target, Leaf, Shield } from "lucide-react";
+import { Download, Users, Edit, Trash2, GraduationCap, Eye, MapPin, Upload, Plus, Calendar, X, UserPlus, User, Phone, Map, FileText, MessageSquare, BookOpen, Heart, Zap, Target, Leaf, Shield, CheckCircle, Clock, ChevronLeft, ChevronRight } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import * as XLSX from 'xlsx';
@@ -34,6 +34,7 @@ interface OnboardingData {
     staff: StaffData[];
     farmers: FarmerData[];
     createdAt?: Date;
+    status: 'pending' | 'completed';
 }
 
 interface Filters {
@@ -45,6 +46,8 @@ interface Stats {
     totalFarmers: number;
     totalOnboarding: number;
     uniqueLocations: number;
+    completedSessions: number;
+    pendingSessions: number;
 }
 
 // Exportable isChiefAdmin function
@@ -71,14 +74,35 @@ const getTopicIcon = (topic: string) => {
     }
 };
 
+// Function to get status badge
+const getStatusBadge = (status: 'pending' | 'completed') => {
+    if (status === 'completed') {
+        return (
+            <Badge className="bg-green-100 text-green-800 hover:bg-green-100">
+                <CheckCircle className="h-3 w-3 mr-1" />
+                Completed
+            </Badge>
+        );
+    } else {
+        return (
+            <Badge variant="outline" className="text-yellow-600 border-yellow-300">
+                <Clock className="h-3 w-3 mr-1" />
+                Pending
+            </Badge>
+        );
+    }
+};
+
 const OnboardingPage = () => {
     const [onboarding, setOnboarding] = useState<OnboardingData[]>([]);
     const [filteredOnboarding, setFilteredOnboarding] = useState<OnboardingData[]>([]);
+    const [displayedOnboarding, setDisplayedOnboarding] = useState<OnboardingData[]>([]);
     const [onboardingForm, setOnboardingForm] = useState({
         id: "",
         topic: "",
         comment: "",
         date: "",
+        status: 'pending' as 'pending' | 'completed'
     });
     const [staff, setStaff] = useState<StaffData[]>([
         { name: "", role: "" }
@@ -89,20 +113,26 @@ const OnboardingPage = () => {
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
     const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+    const [isBulkDeleteDialogOpen, setIsBulkDeleteDialogOpen] = useState(false);
     const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
     const [selectedRecord, setSelectedRecord] = useState<OnboardingData | null>(null);
+    const [selectedRecords, setSelectedRecords] = useState<string[]>([]);
     const [loading, setLoading] = useState(false);
     const [exportLoading, setExportLoading] = useState(false);
     const { toast } = useToast();
     const { user, userRole } = useAuth();
     const fileInputRef = useRef<HTMLInputElement>(null);
 
+    // Pagination state
+    const [currentPage, setCurrentPage] = useState(1);
+    const cardsPerPage = 3;
+
     // Use the exportable isChiefAdmin function
     const userIsChiefAdmin = useMemo(() => {
         return isChiefAdmin(userRole);
     }, [userRole]);
 
-    // Filters state - simplified
+    // Filters state
     const [filters, setFilters] = useState<Filters>({
         startDate: "",
         endDate: "",
@@ -111,7 +141,9 @@ const OnboardingPage = () => {
     const [stats, setStats] = useState<Stats>({
         totalFarmers: 0,
         totalOnboarding: 0,
-        uniqueLocations: 0
+        uniqueLocations: 0,
+        completedSessions: 0,
+        pendingSessions: 0
     });
 
     // Get current month dates for default filter
@@ -164,11 +196,13 @@ const OnboardingPage = () => {
                     comment: docData.comment || "",
                     staff: docData.staff || [],
                     farmers: docData.farmers || [],
-                    createdAt: docData.createdAt?.toDate() || new Date()
+                    createdAt: docData.createdAt?.toDate() || new Date(),
+                    status: docData.status || 'pending'
                 } as OnboardingData;
             });
             setOnboarding(data);
             setFilteredOnboarding(data);
+            setSelectedRecords([]); // Clear selections when data refreshes
         } catch (error) {
             console.error("Error fetching onboarding data:", error);
             toast({
@@ -185,10 +219,9 @@ const OnboardingPage = () => {
         fetchOnboardingData();
     }, []);
 
-    // Filter and process data - simplified
+    // Filter and process data
     const filterAndProcessData = useCallback((data: OnboardingData[], filterParams: Filters) => {
         const filtered = data.filter(record => {
-            // Date filter only
             if (filterParams.startDate || filterParams.endDate) {
                 const recordDate = new Date(record.date);
                 recordDate.setHours(0, 0, 0, 0);
@@ -209,11 +242,15 @@ const OnboardingPage = () => {
         const allFarmers = filtered.flatMap(record => record.farmers);
         const uniqueFarmers = new Set(allFarmers.map(farmer => farmer.idNo || farmer.name));
         const uniqueLocations = new Set(allFarmers.map(farmer => farmer.location).filter(Boolean));
+        const completedSessions = filtered.filter(record => record.status === 'completed').length;
+        const pendingSessions = filtered.filter(record => record.status === 'pending').length;
 
         const calculatedStats = {
             totalFarmers: uniqueFarmers.size,
             totalOnboarding: filtered.length,
-            uniqueLocations: uniqueLocations.size
+            uniqueLocations: uniqueLocations.size,
+            completedSessions,
+            pendingSessions
         };
 
         return {
@@ -229,13 +266,102 @@ const OnboardingPage = () => {
         const result = filterAndProcessData(onboarding, filters);
         setFilteredOnboarding(result.filteredOnboarding);
         setStats(result.stats);
+        setCurrentPage(1);
     }, [onboarding, filters, filterAndProcessData]);
+
+    // Update displayed onboarding based on current page
+    useEffect(() => {
+        const startIndex = (currentPage - 1) * cardsPerPage;
+        const endIndex = startIndex + cardsPerPage;
+        setDisplayedOnboarding(filteredOnboarding.slice(startIndex, endIndex));
+    }, [filteredOnboarding, currentPage]);
+
+    // Pagination functions
+    const totalPages = Math.ceil(filteredOnboarding.length / cardsPerPage);
+    const hasNextPage = currentPage < totalPages;
+    const hasPrevPage = currentPage > 1;
+
+    const handleNextPage = () => {
+        if (hasNextPage) {
+            setCurrentPage(currentPage + 1);
+        }
+    };
+
+    const handlePrevPage = () => {
+        if (hasPrevPage) {
+            setCurrentPage(currentPage - 1);
+        }
+    };
+
+    // Selection handlers for bulk delete
+    const handleSelectRecord = (recordId: string) => {
+        setSelectedRecords(prev => 
+            prev.includes(recordId) 
+                ? prev.filter(id => id !== recordId)
+                : [...prev, recordId]
+        );
+    };
+
+    const handleSelectAllOnPage = () => {
+        const pageRecordIds = displayedOnboarding
+            .filter(record => record.id)
+            .map(record => record.id!) as string[];
+        
+        if (selectedRecords.length === pageRecordIds.length) {
+            // If all are selected, deselect all
+            setSelectedRecords([]);
+        } else {
+            // Select all on current page
+            setSelectedRecords(pageRecordIds);
+        }
+    };
+
+    const handleBulkDelete = async () => {
+        if (selectedRecords.length === 0) return;
+
+        try {
+            setLoading(true);
+            const batch = writeBatch(db);
+            
+            selectedRecords.forEach(recordId => {
+                const recordRef = doc(db, "Onboarding", recordId);
+                batch.delete(recordRef);
+            });
+
+            await batch.commit();
+            
+            toast({
+                title: "Success",
+                description: `Successfully deleted ${selectedRecords.length} onboarding record(s)`,
+            });
+            
+            setIsBulkDeleteDialogOpen(false);
+            setSelectedRecords([]);
+            fetchOnboardingData();
+        } catch (error) {
+            console.error("Error deleting onboarding records:", error);
+            toast({
+                title: "Error",
+                description: "Failed to delete onboarding records",
+                variant: "destructive",
+            });
+        } finally {
+            setLoading(false);
+        }
+    };
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         const { name, value } = e.target;
         setOnboardingForm(prev => ({
             ...prev,
             [name]: value
+        }));
+    };
+
+    const handleStatusChange = (status: 'pending' | 'completed') => {
+        setOnboardingForm(prev => ({
+            ...prev,
+            status
         }));
     };
 
@@ -290,6 +416,7 @@ const OnboardingPage = () => {
             topic: "",
             comment: "",
             date: "",
+            status: 'pending'
         });
         setStaff([{ name: "", role: "" }]);
         setFarmers([{ name: "", idNo: "", phoneNo: "", location: "", region: "" }]);
@@ -378,6 +505,7 @@ const OnboardingPage = () => {
             topic: record.topic,
             comment: record.comment || "",
             date: record.date.toISOString().split('T')[0],
+            status: record.status
         });
         setStaff(record.staff.length > 0 ? record.staff : [{ name: "", role: "" }]);
         setFarmers(record.farmers.length > 0 ? record.farmers : [{ name: "", idNo: "", phoneNo: "", location: "", region: "" }]);
@@ -509,6 +637,7 @@ const OnboardingPage = () => {
                     Date: record.date.toLocaleDateString(),
                     Topic: record.topic,
                     Comment: record.comment || 'N/A',
+                    Status: record.status,
                     'Staff Members': record.staff.map(s => `${s.name} (${s.role})`).join(', '),
                     'Farmer Name': farmer.name,
                     'Farmer ID': farmer.idNo,
@@ -581,7 +710,7 @@ const OnboardingPage = () => {
         </Card>
     );
 
-    // Onboarding Card Component - FIXED: Now properly displays regions
+    // Onboarding Card Component
     const OnboardingCard = ({ record }: { record: OnboardingData }) => {
         // Get unique regions from farmers in this record
         const uniqueRegions = useMemo(() => {
@@ -591,8 +720,12 @@ const OnboardingPage = () => {
             return [...new Set(regions)];
         }, [record.farmers]);
 
+        const isSelected = record.id ? selectedRecords.includes(record.id) : false;
+
         return (
-            <Card className="bg-white shadow-lg border border-gray-200 hover:shadow-xl transition-all duration-300">
+            <Card className={`bg-white shadow-lg border border-gray-200 hover:shadow-xl transition-all duration-300 ${
+                isSelected ? 'ring-2 ring-blue-500 border-blue-500' : ''
+            }`}>
                 <CardHeader className="pb-3">
                     <div className="flex justify-between items-start">
                         <div className="flex-1">
@@ -602,22 +735,41 @@ const OnboardingPage = () => {
                                     {record.topic}
                                 </CardTitle>
                             </div>
-                            {/* Comment Display */}
-                            {record.comment && (
-                                <div className="flex items-start gap-2 mt-2 p-2 rounded border border-gray-200">
-                                    <MessageSquare className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
-                                    <p className="text-sm text-gray-700 leading-tight">{record.comment}</p>
+                            <div className="flex items-center justify-between mt-2">
+                                <div className="flex items-center gap-2 text-sm text-gray-600">
+                                    <Calendar className="h-4 w-4" />
+                                    <span>{record.date.toLocaleDateString()}</span>
                                 </div>
-                            )}
-                            <div className="flex items-center gap-2 text-sm text-gray-600 mt-2">
-                                <Calendar className="h-4 w-4" />
-                                <span>{record.date.toLocaleDateString()}</span>
+                                {getStatusBadge(record.status)}
                             </div>
                         </div>
+                        {userIsChiefAdmin && (
+                            <div className="flex items-center">
+                                <input
+                                    type="checkbox"
+                                    checked={isSelected}
+                                    onChange={() => record.id && handleSelectRecord(record.id)}
+                                    className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                />
+                            </div>
+                        )}
                     </div>
                 </CardHeader>
                 
                 <CardContent className="space-y-4">
+                    {/* Comments Section - Displayed on card */}
+                    {record.comment && (
+                        <div className="pt-2 border-t">
+                            <div className="flex items-start gap-2 text-sm text-gray-700 bg-gray-50 p-3 rounded-lg border">
+                                <MessageSquare className="h-4 w-4 text-blue-500 mt-0.5 flex-shrink-0" />
+                                <div>
+                                    <span className="font-medium text-gray-600">Comments:</span>
+                                    <p className="mt-1 text-gray-800">{record.comment}</p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     {/* Quick Stats - Staff and Participants Count */}
                     <div className="grid grid-cols-1 pt-2 border-t">
                         <div className="flex flex-row-1 justify-between m-2 p-1">
@@ -640,7 +792,7 @@ const OnboardingPage = () => {
                         </div>
                     </div>
 
-                    {/* Regions Display - FIXED */}
+                    {/* Regions Display */}
                     <div className="pt-2 border-t">
                         <div className="flex flex-row-1 justify-between m-2 p-1">
                             <div className="flex items-center justify-center gap-1 text-xs text-gray-600">
@@ -711,6 +863,16 @@ const OnboardingPage = () => {
             <div className="flex justify-between items-center">
                 <h1 className="text-3xl font-bold">Onboarding</h1>
                 <div className="flex gap-2">
+                    {/* Bulk Delete Button - Only show when records are selected */}
+                    {userIsChiefAdmin && selectedRecords.length > 0 && (
+                        <Button 
+                            variant="destructive" 
+                            onClick={() => setIsBulkDeleteDialogOpen(true)}
+                        >
+                            <Trash2 className="w-4 h-4 mr-2" />
+                            Delete Selected ({selectedRecords.length})
+                        </Button>
+                    )}
                     {/* Export button available for chief admin */}
                     {userIsChiefAdmin && (
                         <Button onClick={handleExport} disabled={exportLoading || filteredOnboarding.length === 0}>
@@ -740,7 +902,7 @@ const OnboardingPage = () => {
                     title="ONBOARDING SESSIONS" 
                     value={stats.totalOnboarding} 
                     icon={GraduationCap}
-                    description="Total onboarding sessions conducted"
+                    description={`${stats.completedSessions} completed, ${stats.pendingSessions} pending`}
                 />
                 <StatsCard 
                     title="LOCATIONS COVERED" 
@@ -802,10 +964,50 @@ const OnboardingPage = () => {
                 </CardContent>
             </Card>
 
-            {/* Onboarding Records Cards */}
+            {/* Onboarding Records Cards with Pagination */}
             <Card className="shadow-lg border-0 bg-white">
-                <CardHeader>
-                    <CardTitle>Onboarding Records</CardTitle>
+                <CardHeader className="flex flex-row items-center justify-between">
+                    <div className="flex items-center gap-4">
+                        <CardTitle>Onboarding Records</CardTitle>
+                        {userIsChiefAdmin && displayedOnboarding.length > 0 && (
+                            <div className="flex items-center gap-2">
+                                <input
+                                    type="checkbox"
+                                    checked={selectedRecords.length === displayedOnboarding.filter(r => r.id).length && displayedOnboarding.length > 0}
+                                    onChange={handleSelectAllOnPage}
+                                    className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                />
+                                <Label className="text-sm text-gray-600">
+                                    Select all on page
+                                </Label>
+                            </div>
+                        )}
+                    </div>
+                    {filteredOnboarding.length > cardsPerPage && (
+                        <div className="flex items-center gap-2">
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={handlePrevPage}
+                                disabled={!hasPrevPage}
+                                className="h-8 w-8 p-0"
+                            >
+                                <ChevronLeft className="h-4 w-4" />
+                            </Button>
+                            <span className="text-sm text-gray-600">
+                                Page {currentPage} of {totalPages}
+                            </span>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={handleNextPage}
+                                disabled={!hasNextPage}
+                                className="h-8 w-8 p-0"
+                            >
+                                <ChevronRight className="h-4 w-4" />
+                            </Button>
+                        </div>
+                    )}
                 </CardHeader>
                 <CardContent>
                     {loading ? (
@@ -813,13 +1015,13 @@ const OnboardingPage = () => {
                             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
                             <p className="text-muted-foreground mt-2">Loading onboarding data...</p>
                         </div>
-                    ) : filteredOnboarding.length === 0 ? (
+                    ) : displayedOnboarding.length === 0 ? (
                         <div className="text-center py-12 text-muted-foreground">
                             {onboarding.length === 0 ? "No onboarding records found" : "No records found matching your criteria"}
                         </div>
                     ) : (
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                            {filteredOnboarding.map((record, index) => (
+                            {displayedOnboarding.map((record, index) => (
                                 <OnboardingCard key={record.id || index} record={record} />
                             ))}
                         </div>
@@ -872,6 +1074,29 @@ const OnboardingPage = () => {
                                             value={onboardingForm.date}
                                             onChange={handleInputChange}
                                         />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label>Status</Label>
+                                        <div className="flex gap-2">
+                                            <Button
+                                                type="button"
+                                                variant={onboardingForm.status === 'pending' ? 'default' : 'outline'}
+                                                onClick={() => handleStatusChange('pending')}
+                                                className="flex-1"
+                                            >
+                                                <Clock className="h-4 w-4 mr-2" />
+                                                Pending
+                                            </Button>
+                                            <Button
+                                                type="button"
+                                                variant={onboardingForm.status === 'completed' ? 'default' : 'outline'}
+                                                onClick={() => handleStatusChange('completed')}
+                                                className="flex-1"
+                                            >
+                                                <CheckCircle className="h-4 w-4 mr-2" />
+                                                Completed
+                                            </Button>
+                                        </div>
                                     </div>
                                 </div>
                                 
@@ -1033,7 +1258,7 @@ const OnboardingPage = () => {
                         </DialogContent>
                     </Dialog>
 
-                    {/* Delete Confirmation Dialog */}
+                    {/* Single Delete Confirmation Dialog */}
                     <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
                         <DialogContent>
                             <DialogHeader>
@@ -1050,6 +1275,27 @@ const OnboardingPage = () => {
                                 </Button>
                                 <Button variant="destructive" onClick={handleDeleteConfirm} disabled={loading}>
                                     {loading ? "Deleting..." : "Delete"}
+                                </Button>
+                            </DialogFooter>
+                        </DialogContent>
+                    </Dialog>
+
+                    {/* Bulk Delete Confirmation Dialog */}
+                    <Dialog open={isBulkDeleteDialogOpen} onOpenChange={setIsBulkDeleteDialogOpen}>
+                        <DialogContent>
+                            <DialogHeader>
+                                <DialogTitle>Confirm Bulk Deletion</DialogTitle>
+                                <DialogDescription>
+                                    Are you sure you want to delete {selectedRecords.length} selected onboarding record(s)? 
+                                    This action will permanently remove all associated farmer data and cannot be undone.
+                                </DialogDescription>
+                            </DialogHeader>
+                            <DialogFooter>
+                                <Button variant="outline" onClick={() => setIsBulkDeleteDialogOpen(false)}>
+                                    Cancel
+                                </Button>
+                                <Button variant="destructive" onClick={handleBulkDelete} disabled={loading}>
+                                    {loading ? "Deleting..." : `Delete ${selectedRecords.length} Record(s)`}
                                 </Button>
                             </DialogFooter>
                         </DialogContent>
@@ -1104,14 +1350,13 @@ const OnboardingPage = () => {
                                     <div>
                                         <strong>Topic:</strong> {selectedRecord.topic}
                                     </div>
-                                    {selectedRecord.comment && (
-                                        <div className="col-span-2">
-                                            <strong>Comment:</strong> {selectedRecord.comment}
-                                        </div>
-                                    )}
+                                    <div>
+                                        <strong>Status:</strong> {getStatusBadge(selectedRecord.status)}
+                                    </div>
                                     <div className="col-span-2">
                                         <strong>Staff Members:</strong> {selectedRecord.staff.map(s => `${s.name} (${s.role})`).join(', ')}
                                     </div>
+                                    {/* Comments removed from view dialog as requested */}
                                 </div>
                             )}
                         </DialogDescription>
