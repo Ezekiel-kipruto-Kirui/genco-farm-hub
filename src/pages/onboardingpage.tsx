@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
-import { Download, Users, Edit, Trash2, GraduationCap, Eye, MapPin, Upload, Plus, Calendar, X, UserPlus } from "lucide-react";
+import { Download, Users, Edit, Trash2, GraduationCap, Eye, MapPin, Upload, Plus, Calendar, X, UserPlus, User, Phone, Map, FileText, MessageSquare, BookOpen, Heart, Zap, Target, Leaf, Shield } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import * as XLSX from 'xlsx';
@@ -30,6 +30,7 @@ interface OnboardingData {
     id?: string;
     date: Date;
     topic: string;
+    comment: string;
     staff: StaffData[];
     farmers: FarmerData[];
     createdAt?: Date;
@@ -51,12 +52,32 @@ export const isChiefAdmin = (userRole: string | null): boolean => {
     return userRole === 'chief-admin';
 };
 
+// Function to get icon based on topic
+const getTopicIcon = (topic: string) => {
+    const topicLower = topic.toLowerCase();
+    
+    if (topicLower.includes('health') || topicLower.includes('medical') || topicLower.includes('vaccin')) {
+        return <Heart className="h-5 w-5 text-red-500" />;
+    } else if (topicLower.includes('breed') || topicLower.includes('genetic') || topicLower.includes('reproduction')) {
+        return <Leaf className="h-5 w-5 text-green-500" />;
+    } else if (topicLower.includes('feed') || topicLower.includes('nutrition') || topicLower.includes('diet')) {
+        return <Zap className="h-5 w-5 text-yellow-500" />;
+    } else if (topicLower.includes('market') || topicLower.includes('business') || topicLower.includes('economic')) {
+        return <Target className="h-5 w-5 text-blue-500" />;
+    } else if (topicLower.includes('safety') || topicLower.includes('security') || topicLower.includes('protection')) {
+        return <Shield className="h-5 w-5 text-purple-500" />;
+    } else {
+        return <BookOpen className="h-5 w-5 text-gray-500" />;
+    }
+};
+
 const OnboardingPage = () => {
     const [onboarding, setOnboarding] = useState<OnboardingData[]>([]);
     const [filteredOnboarding, setFilteredOnboarding] = useState<OnboardingData[]>([]);
     const [onboardingForm, setOnboardingForm] = useState({
         id: "",
         topic: "",
+        comment: "",
         date: "",
     });
     const [staff, setStaff] = useState<StaffData[]>([
@@ -140,6 +161,7 @@ const OnboardingPage = () => {
                     id: doc.id,
                     date: docData.date?.toDate() || new Date(),
                     topic: docData.topic || "",
+                    comment: docData.comment || "",
                     staff: docData.staff || [],
                     farmers: docData.farmers || [],
                     createdAt: docData.createdAt?.toDate() || new Date()
@@ -209,7 +231,7 @@ const OnboardingPage = () => {
         setStats(result.stats);
     }, [onboarding, filters, filterAndProcessData]);
 
-    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         const { name, value } = e.target;
         setOnboardingForm(prev => ({
             ...prev,
@@ -266,6 +288,7 @@ const OnboardingPage = () => {
         setOnboardingForm({
             id: "",
             topic: "",
+            comment: "",
             date: "",
         });
         setStaff([{ name: "", role: "" }]);
@@ -353,6 +376,7 @@ const OnboardingPage = () => {
         setOnboardingForm({
             id: record.id || "",
             topic: record.topic,
+            comment: record.comment || "",
             date: record.date.toISOString().split('T')[0],
         });
         setStaff(record.staff.length > 0 ? record.staff : [{ name: "", role: "" }]);
@@ -484,6 +508,7 @@ const OnboardingPage = () => {
                 record.farmers.map(farmer => ({
                     Date: record.date.toLocaleDateString(),
                     Topic: record.topic,
+                    Comment: record.comment || 'N/A',
                     'Staff Members': record.staff.map(s => `${s.name} (${s.role})`).join(', '),
                     'Farmer Name': farmer.name,
                     'Farmer ID': farmer.idNo,
@@ -531,13 +556,6 @@ const OnboardingPage = () => {
         setIsDialogOpen(true);
     };
 
-    // Format staff display for table
-    const formatStaffDisplay = (staffList: StaffData[]): string => {
-        if (staffList.length === 0) return "No staff";
-        if (staffList.length === 1) return `${staffList[0].name} (${staffList[0].role})`;
-        return `${staffList[0].name} +${staffList.length - 1} more`;
-    };
-
     // StatsCard component
     const StatsCard = ({ title, value, icon: Icon, description, children }: any) => (
         <Card className="bg-white text-slate-900 shadow-lg border border-gray-200 relative overflow-hidden">
@@ -562,6 +580,130 @@ const OnboardingPage = () => {
             </CardContent>
         </Card>
     );
+
+    // Onboarding Card Component - FIXED: Now properly displays regions
+    const OnboardingCard = ({ record }: { record: OnboardingData }) => {
+        // Get unique regions from farmers in this record
+        const uniqueRegions = useMemo(() => {
+            const regions = record.farmers
+                .map(farmer => farmer.region)
+                .filter(region => region && region.trim() !== "");
+            return [...new Set(regions)];
+        }, [record.farmers]);
+
+        return (
+            <Card className="bg-white shadow-lg border border-gray-200 hover:shadow-xl transition-all duration-300">
+                <CardHeader className="pb-3">
+                    <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-2">
+                                {getTopicIcon(record.topic)}
+                                <CardTitle className="text-lg font-bold text-gray-800">
+                                    {record.topic}
+                                </CardTitle>
+                            </div>
+                            {/* Comment Display */}
+                            {record.comment && (
+                                <div className="flex items-start gap-2 mt-2 p-2 rounded border border-gray-200">
+                                    <MessageSquare className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                                    <p className="text-sm text-gray-700 leading-tight">{record.comment}</p>
+                                </div>
+                            )}
+                            <div className="flex items-center gap-2 text-sm text-gray-600 mt-2">
+                                <Calendar className="h-4 w-4" />
+                                <span>{record.date.toLocaleDateString()}</span>
+                            </div>
+                        </div>
+                    </div>
+                </CardHeader>
+                
+                <CardContent className="space-y-4">
+                    {/* Quick Stats - Staff and Participants Count */}
+                    <div className="grid grid-cols-1 pt-2 border-t">
+                        <div className="flex flex-row-1 justify-between m-2 p-1">
+                            <div className="flex items-center justify-center gap-2 text-sm font-medium text-blue-700 mb-1">
+                                <User className="h-4 w-4" />
+                                <span>Staff</span>
+                            </div>
+                            <div className="text-md text-blue-800">
+                                {record.staff.length}
+                            </div>
+                        </div>
+                        <div className="flex flex-row-1 justify-between m-2 p-1">
+                            <div className="flex items-center justify-center gap-2 text-sm font-medium text-green-700 mb-1">
+                                <Users className="h-4 w-4" />
+                                <span>Participants</span>
+                            </div>
+                            <div className="text-md text-green-800">
+                                {record.farmers.length}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Regions Display - FIXED */}
+                    <div className="pt-2 border-t">
+                        <div className="flex flex-row-1 justify-between m-2 p-1">
+                            <div className="flex items-center justify-center gap-1 text-xs text-gray-600">
+                                <MapPin className="h-3 w-3" />
+                                <span>Regions</span>
+                            </div>
+                            <div className="text-sm font-semibold text-green-600">
+                                {uniqueRegions.length > 0 ? (
+                                    <div className="flex flex-wrap gap-1 justify-end">
+                                        {uniqueRegions.slice(0, 2).map((region, index) => (
+                                            <Badge key={index} variant="secondary" className="text-xs">
+                                                {region}
+                                            </Badge>
+                                        ))}
+                                        {uniqueRegions.length > 2 && (
+                                            <Badge variant="outline" className="text-xs">
+                                                +{uniqueRegions.length - 2} more
+                                            </Badge>
+                                        )}
+                                    </div>
+                                ) : (
+                                    <span className="text-gray-400">No regions</span>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex gap-2 pt-3 border-t">
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            className="flex-1 h-8 text-xs hover:bg-blue-50 hover:text-blue-600 border-blue-200"
+                            onClick={() => handleView(record)}
+                        >
+                            <Eye className="h-3 w-3 mr-1" />
+                            View Details
+                        </Button>
+                        {userIsChiefAdmin && (
+                            <>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-8 w-8 p-0 hover:bg-green-50 hover:text-green-600 border-green-200"
+                                    onClick={() => handleEdit(record)}
+                                >
+                                    <Edit className="h-3 w-3 text-green-500" />
+                                </Button>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-8 w-8 p-0 hover:bg-red-50 hover:text-red-600 border-red-200"
+                                    onClick={() => handleDeleteClick(record)}
+                                >
+                                    <Trash2 className="h-3 w-3 text-red-500" />
+                                </Button>
+                            </>
+                        )}
+                    </div>
+                </CardContent>
+            </Card>
+        );
+    };
 
     return (
         <div className="container mx-auto p-6 space-y-6">
@@ -660,7 +802,7 @@ const OnboardingPage = () => {
                 </CardContent>
             </Card>
 
-            {/* Onboarding Records Table */}
+            {/* Onboarding Records Cards */}
             <Card className="shadow-lg border-0 bg-white">
                 <CardHeader>
                     <CardTitle>Onboarding Records</CardTitle>
@@ -676,80 +818,10 @@ const OnboardingPage = () => {
                             {onboarding.length === 0 ? "No onboarding records found" : "No records found matching your criteria"}
                         </div>
                     ) : (
-                        <div className="w-full overflow-x-auto rounded-md">
-                            <table className="w-full border-collapse border border-gray-300 text-sm text-left whitespace-nowrap">
-                                <thead className="rounded">
-                                    <tr className="bg-blue-100 p-1 px-3">
-                                        <th className="text-left py-3 px-4 font-medium text-gray-600">Date</th>
-                                        <th className="text-left py-3 px-4 font-medium text-gray-600">Topic</th>
-                                        <th className="text-left py-3 px-4 font-medium text-gray-600">Staff Members</th>
-                                        <th className="text-left py-3 px-4 font-medium text-gray-600">Participants</th>
-                                        {/* Actions column for all users */}
-                                        <th className="text-left py-3 px-4 font-medium text-gray-600">Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {filteredOnboarding.map((record, index) => (
-                                        <tr key={record.id || index} className="border-b hover:bg-blue-50 transition-all duration-200 group text-sm">
-                                            <td className="py-3 px-4 text-xs text-gray-600">
-                                                {record.date.toLocaleDateString()}
-                                            </td>
-                                            <td className="py-3 px-4 text-xs text-gray-600 font-medium">
-                                                {record.topic}
-                                            </td>
-                                            <td className="py-3 px-4 text-xs text-gray-600">
-                                                <div className="flex flex-col gap-1">
-                                                    <span>{formatStaffDisplay(record.staff)}</span>
-                                                    {record.staff.length > 1 && (
-                                                        <Badge variant="secondary" className="text-xs w-fit">
-                                                            {record.staff.length} staff members
-                                                        </Badge>
-                                                    )}
-                                                </div>
-                                            </td>
-                                            <td className="py-3 px-4 text-xs text-gray-600">
-                                                <Badge variant="default" className="bg-green-100 text-green-800">
-                                                    {record.farmers.length} farmers
-                                                </Badge>
-                                            </td>
-                                            {/* Actions cells - different for chief admin vs regular users */}
-                                            <td className="py-3 px-4 text-xs text-gray-600">
-                                                <div className="flex gap-2">
-                                                    <Button
-                                                        variant="outline"
-                                                        size="sm"
-                                                        className="h-8 px-3 hover:bg-blue-50 hover:text-blue-600 border-blue-200"
-                                                        onClick={() => handleView(record)}
-                                                    >
-                                                        <Eye className="h-3 w-3 mr-1" />
-                                                        View Details
-                                                    </Button>
-                                                    {userIsChiefAdmin && (
-                                                        <>
-                                                            <Button
-                                                                variant="outline"
-                                                                size="sm"
-                                                                className="h-8 w-8 p-0 hover:bg-green-50 hover:text-green-600 border-green-200"
-                                                                onClick={() => handleEdit(record)}
-                                                            >
-                                                                <Edit className="h-3 w-3 text-green-500" />
-                                                            </Button>
-                                                            <Button
-                                                                variant="outline"
-                                                                size="sm"
-                                                                className="h-8 w-8 p-0 hover:bg-red-50 hover:text-red-600 border-red-200"
-                                                                onClick={() => handleDeleteClick(record)}
-                                                            >
-                                                                <Trash2 className="h-3 w-3 text-red-500" />
-                                                            </Button>
-                                                        </>
-                                                    )}
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                            {filteredOnboarding.map((record, index) => (
+                                <OnboardingCard key={record.id || index} record={record} />
+                            ))}
                         </div>
                     )}
                 </CardContent>
@@ -768,7 +840,7 @@ const OnboardingPage = () => {
                             </DialogHeader>
                             <div className="grid grid-cols-1 gap-6 max-h-[70vh] overflow-y-auto">
                                 {/* Basic Information */}
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="grid grid-cols-1 gap-4">
                                     <div className="space-y-2">
                                         <Label htmlFor="topic">Topic *</Label>
                                         <Input
@@ -777,6 +849,18 @@ const OnboardingPage = () => {
                                             value={onboardingForm.topic}
                                             onChange={handleInputChange}
                                             placeholder="Enter training topic"
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label htmlFor="comment">Comment/Notes</Label>
+                                        <textarea
+                                            id="comment"
+                                            name="comment"
+                                            value={onboardingForm.comment}
+                                            onChange={handleInputChange}
+                                            placeholder="Add any comments or notes about this onboarding session..."
+                                            rows={3}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
                                         />
                                     </div>
                                     <div className="space-y-2">
@@ -977,8 +1061,7 @@ const OnboardingPage = () => {
                             <DialogHeader>
                                 <DialogTitle>Upload Farmers Excel</DialogTitle>
                                 <DialogDescription>
-                                    Upload an Excel file containing farmer data. The farmers will be added to the current onboarding session.
-                                    Download the template to ensure correct format.
+                                   
                                 </DialogDescription>
                             </DialogHeader>
                             <div className="space-y-4">
@@ -1021,6 +1104,11 @@ const OnboardingPage = () => {
                                     <div>
                                         <strong>Topic:</strong> {selectedRecord.topic}
                                     </div>
+                                    {selectedRecord.comment && (
+                                        <div className="col-span-2">
+                                            <strong>Comment:</strong> {selectedRecord.comment}
+                                        </div>
+                                    )}
                                     <div className="col-span-2">
                                         <strong>Staff Members:</strong> {selectedRecord.staff.map(s => `${s.name} (${s.role})`).join(', ')}
                                     </div>
