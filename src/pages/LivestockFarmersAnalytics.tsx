@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -810,92 +809,85 @@ const LivestockFarmersAnalytics = () => {
           </div>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow className="border-b hover:bg-blue-50 transition-all duration-200 group text-sm">
-                <TableHead className="text-sm text-blue-500 py-1 px-4">Field Officer</TableHead>
-                <TableHead className="text-sm text-blue-500 py-1 px-4" >Email</TableHead>
-                <TableHead className="text-sm text-blue-500 py-1 px-4" >Assigned Region</TableHead>
-                <TableHead className="text-sm text-blue-500 py-1 px-4" >Farmers Registered</TableHead>
-                <TableHead className="text-sm text-blue-500 py-1 px-4" >Monthly Target</TableHead>
-                <TableHead className="text-sm text-blue-500 py-1 px-4" >Progress</TableHead>
-                <TableHead className="text-sm text-blue-500 py-1 px-4" >Status</TableHead>
-                <TableHead className="text-sm text-blue-500 py-1 px-4" >Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {userProgressData.map((user) => (
-                <TableRow key={user.id} className="border-b hover:bg-blue-50 transition-all duration-200 group text-sm">
-                  <TableCell className=" text-sm text-gray-500 py-1 px-4 font-medium">{user.name}</TableCell>
-                  <TableCell className=" text-sm text-gray-500 py-1 px-4 text-sm text-gray-600">{user.email}</TableCell>
-                  <TableCell className="text-sm text-gray-500 py-1 px-4" >
-                    <Badge variant="outline" className="bg-blue-50 text-sm text-gray-500 py-1 px-4  text-blue-700">
-                      {user.region}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className=" text-sm text-gray-500 py-1 px-4 font-semibold">{user.farmersRegistered}</TableCell>
-                  <TableCell className="text-sm text-gray-500 py-1 px-4">{user.monthlyTarget}</TableCell>
-                  <TableCell className="text-sm text-gray-500 py-1 px-4">
-                    <div className="flex items-center gap-2">
-                      <div className="w-20 bg-gray-200 rounded-full h-2">
-                        <div 
-                          className={`h-2 rounded-full ${
-                            user.status === 'achieved' ? 'bg-green-500' :
-                            user.status === 'on-track' ? 'bg-blue-500' :
-                            user.status === 'behind' ? 'bg-yellow-500' :
-                            'bg-red-500'
-                          }`}
-                          style={{ width: `${Math.min(user.progressPercentage, 100)}%` }}
-                        />
+          <div className="w-full overflow-x-auto rounded-md">
+            <table className="w-full border-collapse border border-gray-300 text-sm text-left whitespace-nowrap">
+              <thead className="rounded">
+                <tr className="bg-blue-100 p-1 px-3">
+                  <th className="py-2 px-4 text-sm text-blue-500">Field Officer</th>
+                  <th className="py-2 px-4 text-sm text-blue-500">Assigned Region</th>
+                  <th className="py-2 px-4 text-sm text-blue-500">Farmers Registered</th>
+                  <th className="py-2 px-4 text-sm text-blue-500">Monthly Target</th>
+                  <th className="py-2 px-4 text-sm text-blue-500">Progress</th>
+                  <th className="py-2 px-4 text-sm text-blue-500">Status</th>
+                  <th className="py-2 px-4 text-sm text-blue-500">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {userProgressData.map((user) => (
+                  <tr key={user.id} className="border-b hover:bg-blue-50 transition-all duration-200 group text-sm">
+                    <td className="py-1 px-4 text-sm text-gray-500 font-medium">{user.name}</td>
+                    <td className="py-1 px-4">
+                      <Badge variant="outline" className="bg-blue-50 text-blue-700">
+                        {user.region}
+                      </Badge>
+                    </td>
+                    <td className="py-1 px-4 text-sm text-gray-500 font-semibold">{user.farmersRegistered}</td>
+                    <td className="py-1 px-4 text-sm text-gray-500">{user.monthlyTarget}</td>
+                    <td className="py-1 px-4 text-sm text-gray-500">
+                      <div className="flex items-center gap-2">
+                        <div className="w-20 bg-gray-200 rounded-full h-2">
+                          <div 
+                            className={`h-2 rounded-full ${
+                              user.status === 'achieved' ? 'bg-green-500' :
+                              user.status === 'on-track' ? 'bg-blue-500' :
+                              user.status === 'behind' ? 'bg-yellow-500' :
+                              'bg-red-500'
+                            }`}
+                            style={{ width: `${Math.min(user.progressPercentage, 100)}%` }}
+                          />
+                        </div>
+                        <span className="text-sm text-gray-600">{user.progressPercentage.toFixed(1)}%</span>
                       </div>
-                      <span className="text-sm text-gray-600">{user.progressPercentage.toFixed(1)}%</span>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge 
-                      variant={
-                        user.status === 'achieved' ? 'default' :
-                        user.status === 'on-track' ? 'secondary' :
-                        user.status === 'behind' ? 'outline' :
-                        'destructive'
-                      }
-                      className={
-                        user.status === 'achieved' ? 'bg-green-100 text-green-800' :
-                        user.status === 'on-track' ? 'bg-blue-100 text-blue-800' :
-                        user.status === 'behind' ? 'bg-yellow-100 text-yellow-800' :
-                        'bg-red-100 text-red-800'
-                      }
-                    >
-                      {user.status === 'achieved' ? 'Target Achieved' :
-                       user.status === 'on-track' ? 'On Track' :
-                       user.status === 'behind' ? 'Behind Schedule' :
-                       'Needs Attention'}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                   
+                    </td>
+                    <td className="py-1 px-4">
+                      <Badge 
+                        className={
+                          user.status === 'achieved' ? 'bg-green-100 text-green-800' :
+                          user.status === 'on-track' ? 'bg-blue-100 text-blue-800' :
+                          user.status === 'behind' ? 'bg-yellow-100 text-yellow-800' :
+                          'bg-red-100 text-red-800'
+                        }
+                      >
+                        {user.status === 'achieved' ? 'Target Achieved' :
+                         user.status === 'on-track' ? 'On Track' :
+                         user.status === 'behind' ? 'Behind Schedule' :
+                         'Needs Attention'}
+                      </Badge>
+                    </td>
+                    <td className="py-1 px-4">
                       {isChiefAdmin(userRole) && ( 
                         <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleEditUser(user as any)}
-                    >
-                      <Edit className="h-3 w-3 mr-1" />
-                      Edit
-                    </Button>)}
-
-                  </TableCell>
-                </TableRow>
-              ))}
-              {userProgressData.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={8} className="text-center py-8 text-gray-500">
-                    No users assigned to regions yet. Click "Assign User" to get started.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleEditUser(user as any)}
+                        >
+                          <Edit className="h-3 w-3 mr-1" />
+                          Edit
+                        </Button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+                {userProgressData.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="text-center py-8 text-gray-500">
+                      No users assigned to regions yet. Click "Assign User" to get started.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </CardContent>
       </Card>
 

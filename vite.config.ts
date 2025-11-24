@@ -11,7 +11,8 @@ export default defineConfig(({ mode }) => ({
     // Add this line to allow your ngrok domain
     allowedHosts: [
       'stumpiest-caudally-eloy.ngrok-free.dev', // your current ngrok link
-      '.ngrok-free.dev' // optional: allow all ngrok subdomains
+      '.ngrok-free.dev',
+      'https://genco-farm-1h7eluisr-daves-projects-129ce1a9.vercel.app/' // optional: allow all ngrok subdomains
     ],
   },
   plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
