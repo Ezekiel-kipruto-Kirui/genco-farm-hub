@@ -11,8 +11,7 @@ import {
   Upload,
   Activity,
   UserPlus,
-  LineChart,
-  HeartHandshake
+  LineChart
 } from "lucide-react";
 
 import { NavLink } from "@/components/NavLink";
@@ -79,14 +78,9 @@ const baseMenuItems = [
     url: "/dashboard/activities"
   },
   { 
-    title: "Aditional Training",
+    title: "On Boarding",
     icon: UserPlus,
-    url: "/dashboard/training"
-  },
-   { 
-    title: "Animal Health",
-    icon: HeartHandshake,
-    url: "/dashboard/Animal-health"
+    url: "/dashboard/onboarding"
   },
 ];
 
@@ -122,7 +116,7 @@ export function DashboardSidebar() {
 
               {!collapsed && (
                 <div className="truncate">
-                  <h1 className="text-base font-bold">Genco Company</h1>
+                  <h1 className="text-base font-bold">GenCo Company</h1>
                 </div>
               )}
             </div>

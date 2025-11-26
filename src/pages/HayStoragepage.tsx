@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { fetchData } from "@/lib/firebase";
-import { collection, getDocs, query, updateDoc, doc, deleteDoc, writeBatch, addDoc } from "firebase/firestore";
+import { collection, getDocs, query, updateDoc, doc, deleteDoc, writeBatch } from "firebase/firestore";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,48 +10,37 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
-import { Download, Warehouse, MapPin, Eye, Calendar, Building, Globe, Users, DollarSign, Package, Archive, Edit, Save, X, Upload, Trash2, Plus, LandPlot } from "lucide-react";
+import { Download, Warehouse, MapPin, Eye, Calendar, Building, Globe, Users, DollarSign, Package, Archive, Edit, Save, X, Upload, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { isChiefAdmin } from "./onboardingpage";
 import { uploadDataWithValidation, formatValidationErrors, UploadResult } from "@/lib/uploads-util";
-import { db } from "@/lib/firebase";
 
 // Types
-interface PastureStage {
-  stage: string;
-  date: string;
-}
-
-interface HayStorage {
+interface Infrastructure {
   id: string;
-  date_planted: any;
-  location: string;
-  county: string;
-  subcounty: string;
-  land_under_pasture: number;
-  pasture_stages: PastureStage[];
-  storage_facility?: string;
-  bales_harvested_stored?: number;
-  bales_sold?: number;
-  date_sold?: any;
-  revenue_generated?: number;
-  created_at: any;
-  created_by: string;
+  date: any;
+  location?: string;
+  region?: string;
+  bales_given_sold?: number;
+  bales_size?: string;
+  bales_storeddate?: any;
+  hay_storage_facility?: string;
+  revenue_from_sales?: number;
 }
 
 interface Filters {
   search: string;
   startDate: string;
   endDate: string;
-  county: string;
-  subcounty: string;
+  location: string;
+  region: string;
 }
 
 interface Stats {
-  totalLandUnderPasture: number;
-  totalRevenue: number;
-  totalBalesHarvested: number;
   totalFacilities: number;
+  totalRegions: number;
+  totalRevenue: number;
+  totalBales: number;
 }
 
 interface Pagination {
@@ -64,18 +53,7 @@ interface Pagination {
 
 // Constants
 const PAGE_LIMIT = 15;
-const SEARCH_DEBOUNCE_DELAY = 300;
-
-// Pasture stages options
-const PASTURE_STAGES = [
-  "land preparation",
-  "planting",
-  "early growth",
-  "vegetative growth",
-  "preflowering stage",
-  "harvesting",
-  "baling"
-];
+const SEARCH_DEBOUNCE_DELAY = 300; // milliseconds
 
 // Helper functions
 const parseDate = (date: any): Date | null => {
@@ -124,10 +102,6 @@ const formatCurrency = (amount: number): string => {
   }).format(amount || 0);
 };
 
-const formatArea = (area: number): string => {
-  return new Intl.NumberFormat('en-KE').format(area || 0) + ' acres';
-};
-
 const getCurrentMonthDates = () => {
   const now = new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -140,10 +114,10 @@ const getCurrentMonthDates = () => {
 };
 
 const HayStoragePage = () => {
-  const { userRole, user } = useAuth();
+  const { userRole } = useAuth();
   const { toast } = useToast();
-  const [allHayStorage, setAllHayStorage] = useState<HayStorage[]>([]);
-  const [filteredHayStorage, setFilteredHayStorage] = useState<HayStorage[]>([]);
+  const [allInfrastructure, setAllInfrastructure] = useState<Infrastructure[]>([]);
+  const [filteredInfrastructure, setFilteredInfrastructure] = useState<Infrastructure[]>([]);
   const [loading, setLoading] = useState(true);
   const [exportLoading, setExportLoading] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
@@ -153,30 +127,11 @@ const HayStoragePage = () => {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
-  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
-  const [viewingRecord, setViewingRecord] = useState<HayStorage | null>(null);
-  const [editingRecord, setEditingRecord] = useState<HayStorage | null>(null);
-  const [addingRecord, setAddingRecord] = useState<Partial<HayStorage>>({
-    date_planted: '',
-    location: '',
-    county: '',
-    subcounty: '',
-    land_under_pasture: 0,
-    pasture_stages: [
-      { stage: '', date: '' },
-      { stage: '', date: '' },
-      { stage: '', date: '' }
-    ],
-    storage_facility: '',
-    bales_harvested_stored: 0,
-    bales_sold: 0,
-    date_sold: '',
-    revenue_generated: 0
-  });
+  const [viewingRecord, setViewingRecord] = useState<Infrastructure | null>(null);
+  const [editingRecord, setEditingRecord] = useState<Infrastructure | null>(null);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadProgress, setUploadProgress] = useState<number>(0);
   const [saving, setSaving] = useState(false);
-  const [adding, setAdding] = useState(false);
   
   const searchTimeoutRef = useRef<NodeJS.Timeout>();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -186,15 +141,15 @@ const HayStoragePage = () => {
     search: "",
     startDate: currentMonth.startDate,
     endDate: currentMonth.endDate,
-    county: "all",
-    subcounty: "all",
+    location: "all",
+    region: "all",
   });
 
   const [stats, setStats] = useState<Stats>({
-    totalLandUnderPasture: 0,
-    totalRevenue: 0,
-    totalBalesHarvested: 0,
     totalFacilities: 0,
+    totalRegions: 0,
+    totalRevenue: 0,
+    totalBales: 0,
   });
 
   const [pagination, setPagination] = useState<Pagination>({
@@ -213,41 +168,70 @@ const HayStoragePage = () => {
   const fetchAllData = useCallback(async () => {
     try {
       setLoading(true);
-      console.log("Starting hay storage data fetch from new collection...");
+      console.log("Starting infrastructure data fetch...");
       
-      const hayStorageQuery = query(collection(db, "HayStorage"));
-      const hayStorageSnapshot = await getDocs(hayStorageQuery);
-      
-      const hayStorageData = hayStorageSnapshot.docs.map((doc, index) => {
-        const data = doc.data();
-        console.log(`Processing hay storage item ${index}:`, data);
-        
-        return {
-          id: doc.id,
-          date_planted: data.date_planted,
-          location: data.location || '',
-          county: data.county || '',
-          subcounty: data.subcounty || '',
-          land_under_pasture: Number(data.land_under_pasture || 0),
-          pasture_stages: data.pasture_stages || [],
-          storage_facility: data.storage_facility || '',
-          bales_harvested_stored: Number(data.bales_harvested_stored || 0),
-          bales_sold: Number(data.bales_sold || 0),
-          date_sold: data.date_sold,
-          revenue_generated: Number(data.revenue_generated || 0),
-          created_at: data.created_at,
-          created_by: data.created_by || 'unknown'
-        };
-      });
+      const data = await fetchData();
+      console.log("Raw fetched data:", data);
+      console.log("Infrastructure data structure:", data.infrastructure);
 
-      console.log("Final processed hay storage data:", hayStorageData);
-      setAllHayStorage(hayStorageData);
+      if (!data.infrastructure) {
+        console.warn("No infrastructure data found in response");
+        setAllInfrastructure([]);
+        return;
+      }
+
+      const infrastructureData = Array.isArray(data.infrastructure) ? data.infrastructure.map((item: any, index: number) => {
+        console.log(`Processing infrastructure item ${index}:`, item);
+        
+        // Handle date parsing for main date
+        let dateValue = item.date || item.Date || item.createdAt || item.timestamp;
+        
+        // Handle bales_storeddate parsing
+        let balesStoredDateValue = item.bales_storeddate || item.balesStoredDate || item.stored_date;
+        
+        // Parse dates if they are Firestore timestamp objects
+        const parseFirestoreDate = (dateValue: any) => {
+          if (dateValue && typeof dateValue === 'object') {
+            if (dateValue.toDate && typeof dateValue.toDate === 'function') {
+              return dateValue.toDate();
+            } else if (dateValue.seconds) {
+              return new Date(dateValue.seconds * 1000);
+            } else if (dateValue._seconds) {
+              return new Date(dateValue._seconds * 1000);
+            }
+          }
+          return dateValue;
+        };
+
+        dateValue = parseFirestoreDate(dateValue);
+        balesStoredDateValue = parseFirestoreDate(balesStoredDateValue);
+
+        // Handle different field name variations for infrastructure
+        const processedItem = {
+          id: item.id || `temp-${index}-${Date.now()}`,
+          date: dateValue,
+          location: item.location || item.Location || item.area || item.Area || '',
+          region: item.region || item.Region || item.county || item.County || '',
+          bales_given_sold: Number(item.bales_given_sold || item.balesGivenSold || item.bales_sold || item.balesSold || 0),
+          bales_size: item.bales_size || item.balesSize || item.bale_size || item.baleSize || '',
+          bales_storeddate: balesStoredDateValue,
+          hay_storage_facility: item.hay_storage_facility || item.hayStorageFacility || item.storage_facility || item.storageFacility || '',
+          revenue_from_sales: Number(item.revenue_from_sales || item.revenueFromSales || item.revenue || item.sales_revenue || 0)
+        };
+
+        console.log(`Processed infrastructure item ${index}:`, processedItem);
+        return processedItem;
+
+      }) : [];
+
+      console.log("Final processed infrastructure data:", infrastructureData);
+      setAllInfrastructure(infrastructureData);
       
     } catch (error) {
-      console.error("Error fetching hay storage data:", error);
+      console.error("Error fetching infrastructure data:", error);
       toast({
         title: "Error",
-        description: "Failed to load hay storage data from database",
+        description: "Failed to load infrastructure data from database",
         variant: "destructive",
       });
     } finally {
@@ -257,34 +241,34 @@ const HayStoragePage = () => {
 
   // Filter application
   const applyFilters = useCallback(() => {
-    if (allHayStorage.length === 0) {
-      console.log("No hay storage data to filter");
-      setFilteredHayStorage([]);
+    if (allInfrastructure.length === 0) {
+      console.log("No infrastructure data to filter");
+      setFilteredInfrastructure([]);
       setStats({
-        totalLandUnderPasture: 0,
-        totalRevenue: 0,
-        totalBalesHarvested: 0,
         totalFacilities: 0,
+        totalRegions: 0,
+        totalRevenue: 0,
+        totalBales: 0,
       });
       return;
     }
 
-    console.log("Applying filters to", allHayStorage.length, "hay storage records");
+    console.log("Applying filters to", allInfrastructure.length, "infrastructure records");
     
-    let filtered = allHayStorage.filter(record => {
-      // County filter
-      if (filters.county !== "all" && record.county?.toLowerCase() !== filters.county.toLowerCase()) {
+    let filtered = allInfrastructure.filter(record => {
+      // Region filter
+      if (filters.region !== "all" && record.region?.toLowerCase() !== filters.region.toLowerCase()) {
         return false;
       }
 
-      // Subcounty filter
-      if (filters.subcounty !== "all" && record.subcounty?.toLowerCase() !== filters.subcounty.toLowerCase()) {
+      // Location filter
+      if (filters.location !== "all" && record.location?.toLowerCase() !== filters.location.toLowerCase()) {
         return false;
       }
 
-      // Date filter (using date_planted)
+      // Date filter
       if (filters.startDate || filters.endDate) {
-        const recordDate = parseDate(record.date_planted);
+        const recordDate = parseDate(record.date);
         if (recordDate) {
           const recordDateOnly = new Date(recordDate);
           recordDateOnly.setHours(0, 0, 0, 0);
@@ -297,6 +281,7 @@ const HayStoragePage = () => {
           if (startDate && recordDateOnly < startDate) return false;
           if (endDate && recordDateOnly > endDate) return false;
         } else if (filters.startDate || filters.endDate) {
+          // If we have date filters but no valid date on record, exclude it
           return false;
         }
       }
@@ -306,9 +291,9 @@ const HayStoragePage = () => {
         const searchTerm = filters.search.toLowerCase();
         const searchMatch = [
           record.location, 
-          record.county, 
-          record.subcounty,
-          record.storage_facility
+          record.region, 
+          record.hay_storage_facility,
+          record.bales_size
         ].some(field => field?.toLowerCase().includes(searchTerm));
         if (!searchMatch) return false;
       }
@@ -316,29 +301,23 @@ const HayStoragePage = () => {
       return true;
     });
 
-    console.log("Filtered to", filtered.length, "hay storage records");
-    setFilteredHayStorage(filtered);
+    console.log("Filtered to", filtered.length, "infrastructure records");
+    setFilteredInfrastructure(filtered);
     
     // Update stats
-    const totalRevenue = filtered.reduce((sum, record) => sum + (record.revenue_generated || 0), 0);
-    const totalBalesHarvested = filtered.reduce((sum, record) => sum + (record.bales_harvested_stored || 0), 0);
-    const totalLandUnderPasture = filtered.reduce((sum, record) => sum + (record.land_under_pasture || 0), 0);
+    const totalRevenue = filtered.reduce((sum, record) => sum + (record.revenue_from_sales || 0), 0);
+    const totalBales = filtered.reduce((sum, record) => sum + (record.bales_given_sold || 0), 0);
     
-    // Calculate unique facilities
-    const uniqueFacilities = new Set(
-      filtered
-        .map(record => record.storage_facility)
-        .filter(facility => facility && facility.trim() !== '')
-    );
-    const totalFacilities = uniqueFacilities.size;
+    // Count unique regions from filtered data
+    const uniqueRegions = new Set(filtered.map(f => f.region).filter(Boolean));
 
-    console.log("Stats - Land Under Pasture:", totalLandUnderPasture, "Revenue:", totalRevenue, "Bales Harvested:", totalBalesHarvested, "Facilities:", totalFacilities);
+    console.log("Stats - Total Facilities:", filtered.length, "Regions:", uniqueRegions.size, "Revenue:", totalRevenue, "Bales:", totalBales);
 
     setStats({
-      totalLandUnderPasture,
+      totalFacilities: filtered.length,
+      totalRegions: uniqueRegions.size,
       totalRevenue,
-      totalBalesHarvested,
-      totalFacilities
+      totalBales
     });
 
     // Update pagination
@@ -349,7 +328,7 @@ const HayStoragePage = () => {
       hasNext: prev.page < totalPages,
       hasPrev: prev.page > 1
     }));
-  }, [allHayStorage, filters, pagination.limit]);
+  }, [allInfrastructure, filters, pagination.limit]);
 
   // Effects
   useEffect(() => {
@@ -362,10 +341,12 @@ const HayStoragePage = () => {
 
   // Optimized search handler with debouncing
   const handleSearch = useCallback((value: string) => {
+    // Clear previous timeout
     if (searchTimeoutRef.current) {
       clearTimeout(searchTimeoutRef.current);
     }
 
+    // Set new timeout
     searchTimeoutRef.current = setTimeout(() => {
       setFilters(prev => ({ ...prev, search: value }));
       setPagination(prev => ({ ...prev, page: 1 }));
@@ -387,143 +368,6 @@ const HayStoragePage = () => {
     setPagination(prev => ({ ...prev, page: 1 }));
   }, []);
 
-  // Add new record functionality
-  const handleAddRecord = async () => {
-    if (!addingRecord.date_planted || !addingRecord.location || !addingRecord.county || !addingRecord.subcounty) {
-      toast({
-        title: "Missing Required Fields",
-        description: "Please fill in all required fields (Date Planted, Location, County, Subcounty)",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    try {
-      setAdding(true);
-      
-      const filteredStages = (addingRecord.pasture_stages || []).filter(stage => 
-        stage.stage.trim() !== '' && stage.date.trim() !== ''
-      );
-
-      const newRecord = {
-        date_planted: addingRecord.date_planted,
-        location: addingRecord.location,
-        county: addingRecord.county,
-        subcounty: addingRecord.subcounty,
-        land_under_pasture: Number(addingRecord.land_under_pasture) || 0,
-        pasture_stages: filteredStages,
-        storage_facility: addingRecord.storage_facility || '',
-        bales_harvested_stored: Number(addingRecord.bales_harvested_stored) || 0,
-        bales_sold: Number(addingRecord.bales_sold) || 0,
-        date_sold: addingRecord.date_sold || '',
-        revenue_generated: Number(addingRecord.revenue_generated) || 0,
-        created_at: new Date(),
-        created_by: user?.email || 'unknown'
-      };
-
-      console.log("Adding new record:", newRecord);
-
-      const docRef = await addDoc(collection(db, "HayStorage"), newRecord);
-      
-      toast({
-        title: "Success",
-        description: "Hay storage record added successfully",
-      });
-
-      setAddingRecord({
-        date_planted: '',
-        location: '',
-        county: '',
-        subcounty: '',
-        land_under_pasture: 0,
-        pasture_stages: [
-          { stage: '', date: '' },
-          { stage: '', date: '' },
-          { stage: '', date: '' }
-        ],
-        storage_facility: '',
-        bales_harvested_stored: 0,
-        bales_sold: 0,
-        date_sold: '',
-        revenue_generated: 0
-      });
-      setIsAddDialogOpen(false);
-      
-      await fetchAllData();
-      
-    } catch (error) {
-      console.error("Error adding record:", error);
-      toast({
-        title: "Error",
-        description: "Failed to add record. Please try again.",
-        variant: "destructive",
-      });
-    } finally {
-      setAdding(false);
-    }
-  };
-
-  // Add pasture stage to new record
-  const addPastureStage = () => {
-    setAddingRecord(prev => ({
-      ...prev,
-      pasture_stages: [...(prev.pasture_stages || []), { stage: '', date: '' }]
-    }));
-  };
-
-  // Update pasture stage in new record
-  const updatePastureStage = (index: number, field: keyof PastureStage, value: string) => {
-    setAddingRecord(prev => {
-      const updatedStages = [...(prev.pasture_stages || [])];
-      if (updatedStages[index]) {
-        updatedStages[index] = { ...updatedStages[index], [field]: value };
-      }
-      return { ...prev, pasture_stages: updatedStages };
-    });
-  };
-
-  // Remove pasture stage from new record
-  const removePastureStage = (index: number) => {
-    setAddingRecord(prev => ({
-      ...prev,
-      pasture_stages: (prev.pasture_stages || []).filter((_, i) => i !== index)
-    }));
-  };
-
-  // Add pasture stage to editing record
-  const addEditPastureStage = () => {
-    if (editingRecord) {
-      setEditingRecord(prev => prev ? {
-        ...prev,
-        pasture_stages: [...prev.pasture_stages, { stage: '', date: '' }]
-      } : null);
-    }
-  };
-
-  // Update pasture stage in editing record
-  const updateEditPastureStage = (index: number, field: keyof PastureStage, value: string) => {
-    if (editingRecord) {
-      setEditingRecord(prev => {
-        if (!prev) return null;
-        const updatedStages = [...prev.pasture_stages];
-        if (updatedStages[index]) {
-          updatedStages[index] = { ...updatedStages[index], [field]: value };
-        }
-        return { ...prev, pasture_stages: updatedStages };
-      });
-    }
-  };
-
-  // Remove pasture stage from editing record
-  const removeEditPastureStage = (index: number) => {
-    if (editingRecord) {
-      setEditingRecord(prev => prev ? {
-        ...prev,
-        pasture_stages: prev.pasture_stages.filter((_, i) => i !== index)
-      } : null);
-    }
-  };
-
   // Delete functionality
   const handleDeleteSelected = async () => {
     if (selectedRecords.length === 0) {
@@ -538,15 +382,14 @@ const HayStoragePage = () => {
     try {
       setDeleteLoading(true);
       
-      const batch = writeBatch(db);
-      selectedRecords.forEach(recordId => {
-        const recordRef = doc(db, "HayStorage", recordId);
-        batch.delete(recordRef);
-      });
+      // Simulate deletion - replace with actual Firebase delete operation
+      console.log("Deleting records:", selectedRecords);
       
-      await batch.commit();
+      // In a real implementation, you would call a Firebase delete function here
+      // await deleteInfrastructureRecords(selectedRecords);
       
-      setAllHayStorage(prev => prev.filter(record => !selectedRecords.includes(record.id)));
+      // For now, we'll just filter them out from the local state
+      setAllInfrastructure(prev => prev.filter(record => !selectedRecords.includes(record.id)));
       setSelectedRecords([]);
       
       toast({
@@ -598,6 +441,7 @@ const HayStoragePage = () => {
       setUploadLoading(true);
       setUploadProgress(0);
       
+      // Simulate upload progress
       const progressInterval = setInterval(() => {
         setUploadProgress(prev => {
           if (prev >= 90) {
@@ -608,7 +452,8 @@ const HayStoragePage = () => {
         });
       }, 200);
 
-      const result: UploadResult = await uploadDataWithValidation(uploadFile, "hay_storage");
+      // Use the upload utility
+      const result: UploadResult = await uploadDataWithValidation(uploadFile, "infrastructure");
       
       clearInterval(progressInterval);
       setUploadProgress(100);
@@ -619,11 +464,13 @@ const HayStoragePage = () => {
           description: result.message,
         });
         
+        // Refresh data
         await fetchAllData();
         setIsUploadDialogOpen(false);
         setUploadFile(null);
         setUploadProgress(0);
         
+        // Reset file input
         if (fileInputRef.current) {
           fileInputRef.current.value = '';
         }
@@ -657,7 +504,7 @@ const HayStoragePage = () => {
     try {
       setExportLoading(true);
       
-      if (filteredHayStorage.length === 0) {
+      if (filteredInfrastructure.length === 0) {
         toast({
           title: "No Data to Export",
           description: "There are no records matching your current filters",
@@ -666,21 +513,18 @@ const HayStoragePage = () => {
         return;
       }
 
-      const csvData = filteredHayStorage.map(record => [
-        formatDate(record.date_planted),
+      const csvData = filteredInfrastructure.map(record => [
+        formatDate(record.date),
         record.location || 'N/A',
-        record.county || 'N/A',
-        record.subcounty || 'N/A',
-        record.land_under_pasture || 0,
-        record.pasture_stages.map(stage => `${stage.stage}: ${formatDate(stage.date)}`).join('; '),
-        record.storage_facility || 'N/A',
-        record.bales_harvested_stored || 0,
-        record.bales_sold || 0,
-        formatDate(record.date_sold),
-        formatCurrency(record.revenue_generated || 0)
+        record.region || 'N/A',
+        record.hay_storage_facility || 'N/A',
+        record.bales_given_sold || 0,
+        record.bales_size || 'N/A',
+        formatDate(record.bales_storeddate),
+        formatCurrency(record.revenue_from_sales || 0)
       ]);
 
-      const headers = ['Date Planted', 'Location', 'County', 'Subcounty', 'Land Under Pasture (acres)', 'Pasture Stages', 'Storage Facility', 'Bales Harvested & Stored', 'Bales Sold', 'Date Sold', 'Revenue Generated'];
+      const headers = ['Date', 'Location', 'Region', 'Storage Facility', 'Bales Given/Sold', 'Bales Size', 'Bales Stored Date', 'Revenue'];
       const csvContent = [headers, ...csvData]
         .map(row => row.map(field => `"${field}"`).join(','))
         .join('\n');
@@ -704,7 +548,7 @@ const HayStoragePage = () => {
 
       toast({
         title: "Export Successful",
-        description: `Exported ${filteredHayStorage.length} hay storage records`,
+        description: `Exported ${filteredInfrastructure.length} hay storage records`,
       });
 
     } catch (error) {
@@ -726,8 +570,8 @@ const HayStoragePage = () => {
   const getCurrentPageRecords = useCallback(() => {
     const startIndex = (pagination.page - 1) * pagination.limit;
     const endIndex = startIndex + pagination.limit;
-    return filteredHayStorage.slice(startIndex, endIndex);
-  }, [filteredHayStorage, pagination.page, pagination.limit]);
+    return filteredInfrastructure.slice(startIndex, endIndex);
+  }, [filteredInfrastructure, pagination.page, pagination.limit]);
 
   const handleSelectRecord = (recordId: string) => {
     setSelectedRecords(prev =>
@@ -744,16 +588,13 @@ const HayStoragePage = () => {
     );
   };
 
-  const openViewDialog = (record: HayStorage) => {
+  const openViewDialog = (record: Infrastructure) => {
     setViewingRecord(record);
     setIsViewDialogOpen(true);
   };
 
-  const openEditDialog = (record: HayStorage) => {
-    setEditingRecord({
-      ...record,
-      pasture_stages: [...record.pasture_stages]
-    });
+  const openEditDialog = (record: Infrastructure) => {
+    setEditingRecord({...record});
     setIsEditDialogOpen(true);
   };
 
@@ -762,28 +603,7 @@ const HayStoragePage = () => {
     setIsEditDialogOpen(false);
   };
 
-  const closeAddDialog = () => {
-    setAddingRecord({
-      date_planted: '',
-      location: '',
-      county: '',
-      subcounty: '',
-      land_under_pasture: 0,
-      pasture_stages: [
-        { stage: '', date: '' },
-        { stage: '', date: '' },
-        { stage: '', date: '' }
-      ],
-      storage_facility: '',
-      bales_harvested_stored: 0,
-      bales_sold: 0,
-      date_sold: '',
-      revenue_generated: 0
-    });
-    setIsAddDialogOpen(false);
-  };
-
-  const handleEditChange = (field: keyof HayStorage, value: any) => {
+  const handleEditChange = (field: keyof Infrastructure, value: any) => {
     if (editingRecord) {
       setEditingRecord(prev => prev ? {...prev, [field]: value} : null);
     }
@@ -795,22 +615,13 @@ const HayStoragePage = () => {
     try {
       setSaving(true);
       
-      const filteredStages = editingRecord.pasture_stages.filter(stage => 
-        stage.stage.trim() !== '' && stage.date.trim() !== ''
-      );
-
-      const recordToUpdate = {
-        ...editingRecord,
-        pasture_stages: filteredStages
-      };
-
-      const { id, ...updateData } = recordToUpdate;
+      // Update the record in the database
+      await updateData('infrastructure', editingRecord.id, editingRecord);
       
-      await updateDoc(doc(db, "HayStorage", editingRecord.id), updateData);
-      
-      setAllHayStorage(prev => 
+      // Update local state
+      setAllInfrastructure(prev => 
         prev.map(record => 
-          record.id === editingRecord.id ? recordToUpdate : record
+          record.id === editingRecord.id ? editingRecord : record
         )
       );
 
@@ -834,19 +645,22 @@ const HayStoragePage = () => {
   };
 
   // Memoized values
-  const uniqueCounties = useMemo(() => {
-    const counties = [...new Set(allHayStorage.map(f => f.county).filter(Boolean))];
-    return counties;
-  }, [allHayStorage]);
+  const uniqueRegions = useMemo(() => {
+    const regions = [...new Set(allInfrastructure.map(f => f.region).filter(Boolean))];
+    console.log("Unique regions:", regions);
+    return regions;
+  }, [allInfrastructure]);
 
-  const uniqueSubcounties = useMemo(() => {
-    const subcounties = [...new Set(allHayStorage.map(f => f.subcounty).filter(Boolean))];
-    return subcounties;
-  }, [allHayStorage]);
+  const uniqueLocations = useMemo(() => {
+    const locations = [...new Set(allInfrastructure.map(f => f.location).filter(Boolean))];
+    console.log("Unique locations:", locations);
+    return locations;
+  }, [allInfrastructure]);
 
   const currentPageRecords = useMemo(getCurrentPageRecords, [getCurrentPageRecords]);
 
   const clearAllFilters = () => {
+    // Clear any pending search timeout
     if (searchTimeoutRef.current) {
       clearTimeout(searchTimeoutRef.current);
     }
@@ -855,8 +669,8 @@ const HayStoragePage = () => {
       search: "",
       startDate: "",
       endDate: "",
-      county: "all",
-      subcounty: "all",
+      location: "all",
+      region: "all",
     });
   };
 
@@ -864,7 +678,7 @@ const HayStoragePage = () => {
     setFilters(prev => ({ ...prev, ...currentMonth }));
   };
 
-  // Memoized components
+  // Memoized components to prevent re-renders
   const StatsCard = useCallback(({ title, value, icon: Icon, description }: any) => (
     <Card className="bg-white text-slate-900 shadow-lg border border-gray-200 relative overflow-hidden">
       <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-blue-500 to-purple-600"></div>
@@ -901,15 +715,15 @@ const HayStoragePage = () => {
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="county" className="font-semibold text-gray-700">County</Label>
-        <Select value={filters.county} onValueChange={(value) => handleFilterChange("county", value)}>
+        <Label htmlFor="region" className="font-semibold text-gray-700">Region</Label>
+        <Select value={filters.region} onValueChange={(value) => handleFilterChange("region", value)}>
           <SelectTrigger className="border-gray-300 focus:border-blue-500 focus:ring-blue-500 bg-white">
-            <SelectValue placeholder="Select county" />
+            <SelectValue placeholder="Select region" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Counties</SelectItem>
-            {uniqueCounties.slice(0, 20).map(county => (
-              <SelectItem key={county} value={county}>{county}</SelectItem>
+            <SelectItem value="all">All Regions</SelectItem>
+            {uniqueRegions.slice(0, 20).map(region => (
+              <SelectItem key={region} value={region}>{region}</SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -937,9 +751,9 @@ const HayStoragePage = () => {
         />
       </div>
     </div>
-  ), [filters, uniqueCounties, handleSearch, handleFilterChange]);
+  ), [filters, uniqueRegions, handleSearch, handleFilterChange]);
 
-  const TableRow = useCallback(({ record }: { record: HayStorage }) => {
+  const TableRow = useCallback(({ record }: { record: Infrastructure }) => {
     return (
       <tr className="border-b hover:bg-blue-50 transition-colors duration-200 group text-sm">
         <td className="py-3 px-4">
@@ -948,28 +762,13 @@ const HayStoragePage = () => {
             onCheckedChange={() => handleSelectRecord(record.id)}
           />
         </td>
-        <td className="py-3 px-4">{formatDate(record.date_planted)}</td>
-        <td className="py-3 px-4">{record.location || 'N/A'}</td>
-        <td className="py-3 px-4">{record.land_under_pasture || 0} acres</td>
-        <td className="py-3 px-4">
-          {record.pasture_stages.length > 0 ? (
-            <Badge variant="outline" className="bg-blue-50 text-blue-700">
-              {record.pasture_stages.length} stages
-            </Badge>
-          ) : (
-            'No stages'
-          )}
-        </td>
-        <td className="py-3 px-4">
-          {record.storage_facility ? (
-            <span className="font-medium text-slate-700">{record.storage_facility}</span>
-          ) : (
-            <span className="text-gray-400">No facility</span>
-          )}
-        </td>
-        <td className="py-3 px-4">{record.bales_harvested_stored || 0}</td>
-        <td className="py-3 px-4">{record.bales_sold || 0}</td>
-        <td className="py-3 px-4">{formatCurrency(record.revenue_generated || 0)}</td>
+        <td className="py-3 px-4">{formatDate(record.date)}</td>
+       
+        <td className="py-3 px-4">{record.region || 'N/A'}</td>
+        <td className="py-3 px-4">{record.hay_storage_facility || 'N/A'}</td>
+        <td className="py-3 px-4">{record.bales_given_sold || 0}</td>
+        <td className="py-3 px-4">{record.bales_size || 'N/A'}</td>
+        <td className="py-3 px-4">{formatCurrency(record.revenue_from_sales || 0)}</td>
         <td className="py-3 px-4">
           <div className="flex gap-2">
             <Button
@@ -1014,10 +813,9 @@ const HayStoragePage = () => {
       {/* Header with Action Buttons */}
       <div className="flex md:flex-row flex-col justify-between items-start sm:items-center gap-4">
         <div>
-          <h2 className="text-md font-bold mb-2 bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-            Hay Storage & pasture Management
+          <h2 className="text-xl font-bold mb-2 bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+            Hay Storage
           </h2>
-         
         </div>
 
         <div className="flex flex-wrap gap-2">
@@ -1036,14 +834,6 @@ const HayStoragePage = () => {
             className="text-xs border-gray-300 hover:bg-gray-50"
           >
             This Month
-          </Button>
-          
-          <Button 
-            onClick={() => setIsAddDialogOpen(true)}
-            className="bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white shadow-md text-xs"
-          >
-            <Plus className="h-4 w-4 mr-2" />
-            Add Record
           </Button>
           
           {isChiefAdmin(userRole) && (
@@ -1069,11 +859,11 @@ const HayStoragePage = () => {
               
               <Button 
                 onClick={handleExport} 
-                disabled={exportLoading || filteredHayStorage.length === 0}
+                disabled={exportLoading || filteredInfrastructure.length === 0}
                 className="bg-gradient-to-r from-blue-600 to-purple-700 hover:from-blue-700 hover:to-purple-800 text-white shadow-md text-xs"
               >
                 <Download className="h-4 w-4 mr-2" />
-                {exportLoading ? "Exporting..." : `Export (${filteredHayStorage.length})`}
+                {exportLoading ? "Exporting..." : `Export (${filteredInfrastructure.length})`}
               </Button>
             </>
           )}
@@ -1083,31 +873,31 @@ const HayStoragePage = () => {
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatsCard 
-          title="Land Under Pasture" 
-          value={formatArea(stats.totalLandUnderPasture)} 
-          icon={LandPlot}
-          description="Total land area under pasture cultivation"
+          title="Total Facilities" 
+          value={stats.totalFacilities} 
+          icon={Warehouse}
+          description="Hay storage facilities"
+        />
+
+        <StatsCard 
+          title="Regions" 
+          value={stats.totalRegions} 
+          icon={Globe}
+          description="Unique regions covered"
+        />
+
+        <StatsCard 
+          title="Total Bales" 
+          value={stats.totalBales} 
+          icon={Package}
+          description="Bales given/sold"
         />
 
         <StatsCard 
           title="Total Revenue" 
           value={formatCurrency(stats.totalRevenue)} 
           icon={DollarSign}
-          description="Revenue from hay sales"
-        />
-
-        <StatsCard 
-          title="Bales Harvested" 
-          value={stats.totalBalesHarvested} 
-          icon={Package}
-          description="Total bales harvested & stored"
-        />
-
-        <StatsCard 
-          title="Storage Facilities" 
-          value={stats.totalFacilities} 
-          icon={Warehouse}
-          description="Unique storage facilities used"
+          description="Revenue from sales"
         />
       </div>
 
@@ -1128,7 +918,7 @@ const HayStoragePage = () => {
             </div>
           ) : currentPageRecords.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
-              {allHayStorage.length === 0 ? "No hay storage data found in database" : "No records found matching your criteria"}
+              {allInfrastructure.length === 0 ? "No hay storage data found in database" : "No records found matching your criteria"}
             </div>
           ) : (
             <>
@@ -1142,13 +932,12 @@ const HayStoragePage = () => {
                           onCheckedChange={handleSelectAll}
                         />
                       </th>
-                      <th className="py-3 px-4 font-medium text-gray-600">Date Planted</th>
-                      <th className="py-3 px-4 font-medium text-gray-600">Location</th>
-                      <th className="py-3 px-4 font-medium text-gray-600">Land (acres)</th>
-                      <th className="py-3 px-4 font-medium text-gray-600">Pasture Stages</th>
+                      <th className="py-3 px-4 font-medium text-gray-600">Date</th>
+                    
+                      <th className="py-3 px-4 font-medium text-gray-600">Region</th>
                       <th className="py-3 px-4 font-medium text-gray-600">Storage Facility</th>
-                      <th className="py-3 px-4 font-medium text-gray-600">Bales Harvested</th>
-                      <th className="py-3 px-4 font-medium text-gray-600">Bales Sold</th>
+                      <th className="py-3 px-4 font-medium text-gray-600">Bales Given/Sold</th>
+                      <th className="py-3 px-4 font-medium text-gray-600">Bales Size</th>
                       <th className="py-3 px-4 font-medium text-gray-600">Revenue</th>
                       <th className="py-3 px-4 font-medium text-gray-600">Actions</th>
                     </tr>
@@ -1164,7 +953,7 @@ const HayStoragePage = () => {
               {/* Pagination */}
               <div className="flex items-center justify-between p-4 border-t bg-gray-50">
                 <div className="text-sm text-muted-foreground">
-                  {filteredHayStorage.length} total records • {currentPageRecords.length} on this page
+                  {filteredInfrastructure.length} total records • {currentPageRecords.length} on this page
                 </div>
                 <div className="flex gap-2">
                   <Button
@@ -1192,233 +981,6 @@ const HayStoragePage = () => {
         </CardContent>
       </Card>
 
-      {/* Add Record Dialog */}
-      <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-        <DialogContent className="sm:max-w-3xl bg-white rounded-2xl max-h-[90vh] overflow-hidden">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-slate-900">
-              <Plus className="h-5 w-5 text-green-600" />
-              Add New Hay Storage Record
-            </DialogTitle>
-            <DialogDescription>
-              Enter the details for the new hay storage record. Fields marked with * are required.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-6 py-4 overflow-y-auto max-h-[60vh]">
-            {/* Basic Information */}
-            <div className="bg-slate-50 rounded-xl p-4">
-              <h3 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
-                <Building className="h-4 w-4" />
-                Basic Information *
-              </h3>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="add-date-planted" className="text-sm font-medium text-slate-600">Date Planted *</Label>
-                  <Input
-                    id="add-date-planted"
-                    type="date"
-                    value={addingRecord.date_planted as string}
-                    onChange={(e) => setAddingRecord(prev => ({ ...prev, date_planted: e.target.value }))}
-                    className="border-gray-300 focus:border-blue-500"
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="add-location" className="text-sm font-medium text-slate-600">Location *</Label>
-                  <Input
-                    id="add-location"
-                    value={addingRecord.location || ''}
-                    onChange={(e) => setAddingRecord(prev => ({ ...prev, location: e.target.value }))}
-                    className="border-gray-300 focus:border-blue-500"
-                    placeholder="Enter location"
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="add-county" className="text-sm font-medium text-slate-600">County *</Label>
-                  <Input
-                    id="add-county"
-                    value={addingRecord.county || ''}
-                    onChange={(e) => setAddingRecord(prev => ({ ...prev, county: e.target.value }))}
-                    className="border-gray-300 focus:border-blue-500"
-                    placeholder="Enter county"
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="add-subcounty" className="text-sm font-medium text-slate-600">Subcounty *</Label>
-                  <Input
-                    id="add-subcounty"
-                    value={addingRecord.subcounty || ''}
-                    onChange={(e) => setAddingRecord(prev => ({ ...prev, subcounty: e.target.value }))}
-                    className="border-gray-300 focus:border-blue-500"
-                    placeholder="Enter subcounty"
-                    required
-                  />
-                </div>
-                <div className="space-y-2 col-span-2">
-                  <Label htmlFor="add-land-pasture" className="text-sm font-medium text-slate-600">Land Under Pasture (acres) *</Label>
-                  <Input
-                    id="add-land-pasture"
-                    type="number"
-                    step="0.1"
-                    min="0"
-                    value={addingRecord.land_under_pasture || 0}
-                    onChange={(e) => setAddingRecord(prev => ({ ...prev, land_under_pasture: parseFloat(e.target.value) || 0 }))}
-                    className="border-gray-300 focus:border-blue-500"
-                    placeholder="Enter land area in acres"
-                    required
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Pasture Stages */}
-            <div className="bg-slate-50 rounded-xl p-4">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="font-semibold text-slate-800 flex items-center gap-2">
-                  <Package className="h-4 w-4" />
-                  Pasture Stages
-                </h3>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={addPastureStage}
-                  className="text-xs"
-                >
-                  <Plus className="h-3 w-3 mr-1" />
-                  Add Stage
-                </Button>
-              </div>
-              
-              {(addingRecord.pasture_stages || []).map((stage, index) => (
-                <div key={index} className="grid grid-cols-2 gap-4 mb-3 p-3 bg-white rounded-lg border">
-                  <div className="space-y-2">
-                    <Label htmlFor={`stage-${index}`} className="text-sm font-medium text-slate-600">Stage</Label>
-                    <Select
-                      value={stage.stage}
-                      onValueChange={(value) => updatePastureStage(index, 'stage', value)}
-                    >
-                      <SelectTrigger className="border-gray-300 focus:border-blue-500">
-                        <SelectValue placeholder="Select stage" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {PASTURE_STAGES.map(stageOption => (
-                          <SelectItem key={stageOption} value={stageOption}>
-                            {stageOption.charAt(0).toUpperCase() + stageOption.slice(1)}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor={`stage-date-${index}`} className="text-sm font-medium text-slate-600">Date</Label>
-                    <div className="flex gap-2">
-                      <Input
-                        id={`stage-date-${index}`}
-                        type="date"
-                        value={stage.date}
-                        onChange={(e) => updatePastureStage(index, 'date', e.target.value)}
-                        className="border-gray-300 focus:border-blue-500"
-                      />
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => removePastureStage(index)}
-                        className="text-red-500 hover:text-red-700 hover:bg-red-50"
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Optional Information */}
-            <div className="bg-slate-50 rounded-xl p-4">
-              <h3 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
-                <Warehouse className="h-4 w-4" />
-                Optional Information
-              </h3>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="add-storage-facility" className="text-sm font-medium text-slate-600">Storage Facility</Label>
-                  <Input
-                    id="add-storage-facility"
-                    value={addingRecord.storage_facility || ''}
-                    onChange={(e) => setAddingRecord(prev => ({ ...prev, storage_facility: e.target.value }))}
-                    className="border-gray-300 focus:border-blue-500"
-                    placeholder="Enter storage facility"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="add-bales-harvested" className="text-sm font-medium text-slate-600">Bales Harvested & Stored</Label>
-                  <Input
-                    id="add-bales-harvested"
-                    type="number"
-                    value={addingRecord.bales_harvested_stored || 0}
-                    onChange={(e) => setAddingRecord(prev => ({ ...prev, bales_harvested_stored: parseInt(e.target.value) || 0 }))}
-                    className="border-gray-300 focus:border-blue-500"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="add-bales-sold" className="text-sm font-medium text-slate-600">Bales Sold</Label>
-                  <Input
-                    id="add-bales-sold"
-                    type="number"
-                    value={addingRecord.bales_sold || 0}
-                    onChange={(e) => setAddingRecord(prev => ({ ...prev, bales_sold: parseInt(e.target.value) || 0 }))}
-                    className="border-gray-300 focus:border-blue-500"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="add-date-sold" className="text-sm font-medium text-slate-600">Date Sold</Label>
-                  <Input
-                    id="add-date-sold"
-                    type="date"
-                    value={addingRecord.date_sold as string}
-                    onChange={(e) => setAddingRecord(prev => ({ ...prev, date_sold: e.target.value }))}
-                    className="border-gray-300 focus:border-blue-500"
-                  />
-                </div>
-                <div className="space-y-2 col-span-2">
-                  <Label htmlFor="add-revenue" className="text-sm font-medium text-slate-600">Revenue Generated (KES)</Label>
-                  <Input
-                    id="add-revenue"
-                    type="number"
-                    value={addingRecord.revenue_generated || 0}
-                    onChange={(e) => setAddingRecord(prev => ({ ...prev, revenue_generated: parseFloat(e.target.value) || 0 }))}
-                    className="border-gray-300 focus:border-blue-500"
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-          <DialogFooter className="flex gap-2">
-            <Button 
-              variant="outline"
-              onClick={closeAddDialog}
-              disabled={adding}
-              className="border-gray-300 hover:bg-gray-50"
-            >
-              <X className="h-4 w-4 mr-2" />
-              Cancel
-            </Button>
-            <Button 
-              onClick={handleAddRecord}
-              disabled={adding}
-              className="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white"
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              {adding ? "Adding..." : "Add Record"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
       {/* View Record Dialog */}
       <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
         <DialogContent className="sm:max-w-2xl bg-white rounded-2xl max-h-[90vh] overflow-hidden">
@@ -1428,7 +990,7 @@ const HayStoragePage = () => {
               Hay Storage Details
             </DialogTitle>
             <DialogDescription>
-              Complete information for this hay storage record
+              Complete information for this hay storage facility
             </DialogDescription>
           </DialogHeader>
           {viewingRecord && (
@@ -1441,75 +1003,56 @@ const HayStoragePage = () => {
                 </h3>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <Label className="text-sm font-medium text-slate-600">Date Planted</Label>
-                    <p className="text-slate-900 font-medium">{formatDate(viewingRecord.date_planted)}</p>
+                    <Label className="text-sm font-medium text-slate-600">Date</Label>
+                    <p className="text-slate-900 font-medium">{formatDate(viewingRecord.date)}</p>
                   </div>
                   <div>
                     <Label className="text-sm font-medium text-slate-600">Location</Label>
                     <p className="text-slate-900 font-medium">{viewingRecord.location || 'N/A'}</p>
                   </div>
                   <div>
-                    <Label className="text-sm font-medium text-slate-600">County</Label>
-                    <p className="text-slate-900 font-medium">{viewingRecord.county || 'N/A'}</p>
+                    <Label className="text-sm font-medium text-slate-600">Region</Label>
+                    <p className="text-slate-900 font-medium">{viewingRecord.region || 'N/A'}</p>
                   </div>
                   <div>
-                    <Label className="text-sm font-medium text-slate-600">Subcounty</Label>
-                    <p className="text-slate-900 font-medium">{viewingRecord.subcounty || 'N/A'}</p>
-                  </div>
-                  <div className="col-span-2">
-                    <Label className="text-sm font-medium text-slate-600">Land Under Pasture</Label>
-                    <p className="text-slate-900 font-medium text-lg">{formatArea(viewingRecord.land_under_pasture || 0)}</p>
+                    <Label className="text-sm font-medium text-slate-600">Storage Facility</Label>
+                    <p className="text-slate-900 font-medium">{viewingRecord.hay_storage_facility || 'N/A'}</p>
                   </div>
                 </div>
               </div>
 
-              {/* Pasture Stages */}
+              {/* Bales Information */}
               <div className="bg-slate-50 rounded-xl p-4">
                 <h3 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
                   <Package className="h-4 w-4" />
-                  Pasture Stages ({viewingRecord.pasture_stages.length})
-                </h3>
-                <div className="space-y-2">
-                  {viewingRecord.pasture_stages.map((stage, index) => (
-                    <div key={index} className="flex items-center justify-between bg-white rounded-lg p-3 border">
-                      <span className="font-medium text-slate-900 capitalize">{stage.stage}</span>
-                      <Badge variant="outline" className="bg-blue-50 text-blue-700">
-                        {formatDate(stage.date)}
-                      </Badge>
-                    </div>
-                  ))}
-                  {viewingRecord.pasture_stages.length === 0 && (
-                    <p className="text-sm text-gray-500 text-center py-2">No pasture stages recorded</p>
-                  )}
-                </div>
-              </div>
-
-              {/* Optional Information */}
-              <div className="bg-slate-50 rounded-xl p-4">
-                <h3 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
-                  <Warehouse className="h-4 w-4" />
-                  Storage & Sales Information
+                  Bales Information
                 </h3>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <Label className="text-sm font-medium text-slate-600">Storage Facility</Label>
-                    <p className="text-slate-900 font-medium">{viewingRecord.storage_facility || 'N/A'}</p>
+                    <Label className="text-sm font-medium text-slate-600">Bales Given/Sold</Label>
+                    <p className="text-slate-900 font-medium">{viewingRecord.bales_given_sold || 0}</p>
                   </div>
                   <div>
-                    <Label className="text-sm font-medium text-slate-600">Bales Harvested & Stored</Label>
-                    <p className="text-slate-900 font-medium">{viewingRecord.bales_harvested_stored || 0}</p>
+                    <Label className="text-sm font-medium text-slate-600">Bales Size</Label>
+                    <p className="text-slate-900 font-medium">{viewingRecord.bales_size || 'N/A'}</p>
                   </div>
                   <div>
-                    <Label className="text-sm font-medium text-slate-600">Bales Sold</Label>
-                    <p className="text-slate-900 font-medium">{viewingRecord.bales_sold || 0}</p>
+                    <Label className="text-sm font-medium text-slate-600">Bales Stored Date</Label>
+                    <p className="text-slate-900 font-medium">{formatDate(viewingRecord.bales_storeddate)}</p>
                   </div>
+                </div>
+              </div>
+
+              {/* Financial Information */}
+              <div className="bg-slate-50 rounded-xl p-4">
+                <h3 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
+                  <DollarSign className="h-4 w-4" />
+                  Financial Information
+                </h3>
+                <div className="grid grid-cols-1 gap-4">
                   <div>
-                    <Label className="text-sm font-medium text-slate-600">Date Sold</Label>
-                    <p className="text-slate-900 font-medium">{formatDate(viewingRecord.date_sold)}</p>
-                  </div>
-                  <div className="col-span-2">
-                    <Label className="text-sm font-medium text-slate-600">Revenue Generated</Label>
-                    <p className="text-slate-900 font-medium text-lg">{formatCurrency(viewingRecord.revenue_generated || 0)}</p>
+                    <Label className="text-sm font-medium text-slate-600">Revenue from Sales</Label>
+                    <p className="text-slate-900 font-medium text-lg">{formatCurrency(viewingRecord.revenue_from_sales || 0)}</p>
                   </div>
                 </div>
               </div>
@@ -1528,14 +1071,14 @@ const HayStoragePage = () => {
 
       {/* Edit Record Dialog */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="sm:max-w-3xl bg-white rounded-2xl max-h-[90vh] overflow-hidden">
+        <DialogContent className="sm:max-w-2xl bg-white rounded-2xl max-h-[90vh] overflow-hidden">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-slate-900">
               <Edit className="h-5 w-5 text-green-600" />
               Edit Hay Storage Record
             </DialogTitle>
             <DialogDescription>
-              Update the information for this hay storage record. You can add new stages without changing existing ones.
+              Update the information for this hay storage facility
             </DialogDescription>
           </DialogHeader>
           {editingRecord && (
@@ -1548,12 +1091,12 @@ const HayStoragePage = () => {
                 </h3>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="edit-date-planted" className="text-sm font-medium text-slate-600">Date Planted</Label>
+                    <Label htmlFor="edit-date" className="text-sm font-medium text-slate-600">Date</Label>
                     <Input
-                      id="edit-date-planted"
+                      id="edit-date"
                       type="date"
-                      value={formatDateForInput(editingRecord.date_planted)}
-                      onChange={(e) => handleEditChange('date_planted', e.target.value)}
+                      value={formatDateForInput(editingRecord.date)}
+                      onChange={(e) => handleEditChange('date', e.target.value)}
                       className="border-gray-300 focus:border-blue-500"
                     />
                   </div>
@@ -1567,161 +1110,79 @@ const HayStoragePage = () => {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="edit-county" className="text-sm font-medium text-slate-600">County</Label>
+                    <Label htmlFor="edit-region" className="text-sm font-medium text-slate-600">Region</Label>
                     <Input
-                      id="edit-county"
-                      value={editingRecord.county || ''}
-                      onChange={(e) => handleEditChange('county', e.target.value)}
+                      id="edit-region"
+                      value={editingRecord.region || ''}
+                      onChange={(e) => handleEditChange('region', e.target.value)}
                       className="border-gray-300 focus:border-blue-500"
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="edit-subcounty" className="text-sm font-medium text-slate-600">Subcounty</Label>
+                    <Label htmlFor="edit-facility" className="text-sm font-medium text-slate-600">Storage Facility</Label>
                     <Input
-                      id="edit-subcounty"
-                      value={editingRecord.subcounty || ''}
-                      onChange={(e) => handleEditChange('subcounty', e.target.value)}
-                      className="border-gray-300 focus:border-blue-500"
-                    />
-                  </div>
-                  <div className="space-y-2 col-span-2">
-                    <Label htmlFor="edit-land-pasture" className="text-sm font-medium text-slate-600">Land Under Pasture (acres)</Label>
-                    <Input
-                      id="edit-land-pasture"
-                      type="number"
-                      step="0.1"
-                      min="0"
-                      value={editingRecord.land_under_pasture || 0}
-                      onChange={(e) => handleEditChange('land_under_pasture', parseFloat(e.target.value) || 0)}
+                      id="edit-facility"
+                      value={editingRecord.hay_storage_facility || ''}
+                      onChange={(e) => handleEditChange('hay_storage_facility', e.target.value)}
                       className="border-gray-300 focus:border-blue-500"
                     />
                   </div>
                 </div>
               </div>
 
-              {/* Pasture Stages */}
-              <div className="bg-slate-50 rounded-xl p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-semibold text-slate-800 flex items-center gap-2">
-                    <Package className="h-4 w-4" />
-                    Pasture Stages ({editingRecord.pasture_stages.length})
-                  </h3>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={addEditPastureStage}
-                    className="text-xs"
-                  >
-                    <Plus className="h-3 w-3 mr-1" />
-                    Add New Stage
-                  </Button>
-                </div>
-                
-                {editingRecord.pasture_stages.map((stage, index) => (
-                  <div key={index} className="grid grid-cols-2 gap-4 mb-3 p-3 bg-white rounded-lg border">
-                    <div className="space-y-2">
-                      <Label htmlFor={`edit-stage-${index}`} className="text-sm font-medium text-slate-600">Stage</Label>
-                      <Select
-                        value={stage.stage}
-                        onValueChange={(value) => updateEditPastureStage(index, 'stage', value)}
-                      >
-                        <SelectTrigger className="border-gray-300 focus:border-blue-500">
-                          <SelectValue placeholder="Select stage" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {PASTURE_STAGES.map(stageOption => (
-                            <SelectItem key={stageOption} value={stageOption}>
-                              {stageOption.charAt(0).toUpperCase() + stageOption.slice(1)}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor={`edit-stage-date-${index}`} className="text-sm font-medium text-slate-600">Date</Label>
-                      <div className="flex gap-2">
-                        <Input
-                          id={`edit-stage-date-${index}`}
-                          type="date"
-                          value={stage.date}
-                          onChange={(e) => updateEditPastureStage(index, 'date', e.target.value)}
-                          className="border-gray-300 focus:border-blue-500"
-                        />
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => removeEditPastureStage(index)}
-                          className="text-red-500 hover:text-red-700 hover:bg-red-50"
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-                
-                {editingRecord.pasture_stages.length === 0 && (
-                  <p className="text-sm text-gray-500 text-center py-2">
-                    No pasture stages recorded. Click "Add New Stage" to add growth stages.
-                  </p>
-                )}
-              </div>
-
-              {/* Optional Information */}
+              {/* Bales Information */}
               <div className="bg-slate-50 rounded-xl p-4">
                 <h3 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
-                  <Warehouse className="h-4 w-4" />
-                  Storage & Sales Information
+                  <Package className="h-4 w-4" />
+                  Bales Information
                 </h3>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="edit-storage-facility" className="text-sm font-medium text-slate-600">Storage Facility</Label>
+                    <Label htmlFor="edit-bales" className="text-sm font-medium text-slate-600">Bales Given/Sold</Label>
                     <Input
-                      id="edit-storage-facility"
-                      value={editingRecord.storage_facility || ''}
-                      onChange={(e) => handleEditChange('storage_facility', e.target.value)}
-                      className="border-gray-300 focus:border-blue-500"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-bales-harvested" className="text-sm font-medium text-slate-600">Bales Harvested & Stored</Label>
-                    <Input
-                      id="edit-bales-harvested"
+                      id="edit-bales"
                       type="number"
-                      value={editingRecord.bales_harvested_stored || 0}
-                      onChange={(e) => handleEditChange('bales_harvested_stored', parseInt(e.target.value) || 0)}
+                      value={editingRecord.bales_given_sold || 0}
+                      onChange={(e) => handleEditChange('bales_given_sold', parseInt(e.target.value) || 0)}
                       className="border-gray-300 focus:border-blue-500"
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="edit-bales-sold" className="text-sm font-medium text-slate-600">Bales Sold</Label>
+                    <Label htmlFor="edit-bales-size" className="text-sm font-medium text-slate-600">Bales Size</Label>
                     <Input
-                      id="edit-bales-sold"
-                      type="number"
-                      value={editingRecord.bales_sold || 0}
-                      onChange={(e) => handleEditChange('bales_sold', parseInt(e.target.value) || 0)}
+                      id="edit-bales-size"
+                      value={editingRecord.bales_size || ''}
+                      onChange={(e) => handleEditChange('bales_size', e.target.value)}
                       className="border-gray-300 focus:border-blue-500"
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="edit-date-sold" className="text-sm font-medium text-slate-600">Date Sold</Label>
+                    <Label htmlFor="edit-stored-date" className="text-sm font-medium text-slate-600">Bales Stored Date</Label>
                     <Input
-                      id="edit-date-sold"
+                      id="edit-stored-date"
                       type="date"
-                      value={formatDateForInput(editingRecord.date_sold)}
-                      onChange={(e) => handleEditChange('date_sold', e.target.value)}
+                      value={formatDateForInput(editingRecord.bales_storeddate)}
+                      onChange={(e) => handleEditChange('bales_storeddate', e.target.value)}
                       className="border-gray-300 focus:border-blue-500"
                     />
                   </div>
-                  <div className="space-y-2 col-span-2">
-                    <Label htmlFor="edit-revenue" className="text-sm font-medium text-slate-600">Revenue Generated (KES)</Label>
+                </div>
+              </div>
+
+              {/* Financial Information */}
+              <div className="bg-slate-50 rounded-xl p-4">
+                <h3 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
+                  <DollarSign className="h-4 w-4" />
+                  Financial Information
+                </h3>
+                <div className="grid grid-cols-1 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-revenue" className="text-sm font-medium text-slate-600">Revenue from Sales (Ksh)</Label>
                     <Input
                       id="edit-revenue"
                       type="number"
-                      value={editingRecord.revenue_generated || 0}
-                      onChange={(e) => handleEditChange('revenue_generated', parseFloat(e.target.value) || 0)}
+                      value={editingRecord.revenue_from_sales || 0}
+                      onChange={(e) => handleEditChange('revenue_from_sales', parseFloat(e.target.value) || 0)}
                       className="border-gray-300 focus:border-blue-500"
                     />
                   </div>
@@ -1877,5 +1338,14 @@ const HayStoragePage = () => {
     </div>
   );
 };
+
+// Mock function - replace with actual Firebase implementation
+async function updateData(collectionName: string, id: string, data: Infrastructure) {
+  // In a real implementation, you would update the document in Firebase
+  console.log(`Updating ${collectionName} document ${id}:`, data);
+  // Example implementation:
+  // const docRef = doc(db, collectionName, id);
+  // await updateDoc(docRef, data);
+}
 
 export default HayStoragePage;

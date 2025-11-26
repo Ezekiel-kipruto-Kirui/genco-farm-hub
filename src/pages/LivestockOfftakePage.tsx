@@ -584,7 +584,7 @@ const LivestockOfftakePage = () => {
 
       // Add grand totals row
       const totalAnimals = filteredOfftake.reduce((sum, record) => sum + (record.noSheepGoats || 0), 0);
-      const totalRevenue = filteredOfftake.reduce((sum, record) => sum + (record.totalprice || 0), 0).toLocaleString();
+      const totalRevenue = filteredOfftake.reduce((sum, record) => sum + (record.totalprice || 0), 0);
       const totalLiveWeight = filteredOfftake.reduce((sum, record) => sum + calculateTotal(record.liveWeight), 0);
       const totalCarcassWeight = filteredOfftake.reduce((sum, record) => sum + calculateTotal(record.carcassWeight || 0), 0);
       const totalPricePerAnimals = filteredOfftake.reduce((sum, record) => sum + calculateTotal(record.pricePerGoatAndSheep), 0);
@@ -735,27 +735,6 @@ const LivestockOfftakePage = () => {
   }, []);
 
   // File upload handlers
-function safeTruncate(value: string | number) {
-  // Convert value to string
-  let str = String(value);
-
-  // Remove commas and all non-number chars except dot
-  str = str.replace(/[^0-9.]/g, "");
-
-  // Convert to number
-  const num = Number(str);
-
-  if (isNaN(num)) return "Invalid Number";
-
-  // Truncate rules
-  if (num >= 1_000_000_000) return (num / 1_000_000_000).toFixed(1) + "B";
-  if (num >= 1_000_000) return (num / 1_000_000).toFixed(1) + "M";
-  if (num >= 1_000) return (num / 1_000).toFixed(1) + "K";
-
-  return num.toLocaleString();
-}
-
-
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
@@ -778,7 +757,6 @@ function safeTruncate(value: string | number) {
       
       const fileExtension = uploadFile.name.split('.').pop()?.toLowerCase();
       const fileReader = new FileReader();
-
 
       fileReader.onload = async (e) => {
         try {
@@ -1296,14 +1274,14 @@ function safeTruncate(value: string | number) {
 
         <StatsCard 
           title="TOTAL ANIMALS" 
-          value={stats.totalAnimals.toLocaleString()} 
+          value={stats.totalAnimals} 
           icon={Scale}
           description={`Avg Live: ${stats.averageLiveWeight.toFixed(1)}kg | Avg Carcass: ${stats.averageCarcassWeight.toFixed(1)}kg`}
         />
 
         <StatsCard 
           title="TOTAL REVENUE" 
-          value={ safeTruncate(formatCurrency(stats.totalRevenue))} 
+          value={formatCurrency(stats.totalRevenue)} 
           icon={CreditCard}
           description={`Average per goat: ${formatCurrency(stats.averageRevenue)}`}
         />

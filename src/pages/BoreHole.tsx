@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { fetchData, db } from "@/lib/firebase";
+import { fetchData } from "@/lib/firebase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,20 +9,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
-import { Download, MapPin, Eye, Calendar, Droplets, Users, Globe, Building, Trash2, Upload, Plus, Edit } from "lucide-react";
+import { Download, MapPin, Eye, Calendar, Droplets, Users, Globe, Building, Trash2, Upload, Plus } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { isChiefAdmin } from "./onboardingpage";
-import { 
-  collection, 
-  addDoc, 
-  updateDoc, 
-  doc, 
-  deleteDoc, 
-  getDocs,
-  query,
-  where,
-  Timestamp 
-} from "firebase/firestore";
 
 // Types
 interface Borehole {
@@ -30,10 +19,8 @@ interface Borehole {
   date: any;
   location?: string;
   region?: string;
-  people?: string | number;
+  people?: string | number; // Can be string or number as it comes from DB
   waterUsed?: number;
-  drilled?: boolean;
-  maintained?: boolean;
 }
 
 interface Filters {
@@ -41,12 +28,12 @@ interface Filters {
   startDate: string;
   endDate: string;
   location: string;
+  region: string;
 }
 
 interface Stats {
   totalBoreholes: number;
-  drilledBoreholes: number;
-  maintainedBoreholes: number;
+  totalRegions: number;
   totalPeople: number;
   totalWaterUsed: number;
 }
@@ -59,87 +46,9 @@ interface Pagination {
   hasPrev: boolean;
 }
 
-// Firebase operations
-interface FirebaseResult {
-  success: boolean;
-  error?: string;
-  id?: string;
-}
-
-// Real Firebase implementation
-const addData = async (collectionName: string, data: any): Promise<FirebaseResult> => {
-  try {
-    console.log("Adding data to", collectionName, data);
-    
-    // Convert date to Firestore Timestamp if it's a string
-    const dataToSave = {
-      ...data,
-      date: data.date instanceof Date ? Timestamp.fromDate(data.date) : data.date
-    };
-
-    const docRef = await addDoc(collection(db, collectionName), dataToSave);
-    console.log("Document written with ID: ", docRef.id);
-    
-    return { 
-      success: true, 
-      id: docRef.id 
-    };
-  } catch (error) {
-    console.error("Error adding document:", error);
-    return { 
-      success: false, 
-      error: error instanceof Error ? error.message : 'Unknown error occurred' 
-    };
-  }
-};
-
-const updateData = async (collectionName: string, docId: string, data: any): Promise<FirebaseResult> => {
-  try {
-    console.log("Updating document in", collectionName, docId, data);
-    
-    // Convert date to Firestore Timestamp if it's a Date object
-    const dataToUpdate = {
-      ...data,
-      date: data.date instanceof Date ? Timestamp.fromDate(data.date) : data.date
-    };
-
-    const docRef = doc(db, collectionName, docId);
-    await updateDoc(docRef, dataToUpdate);
-    
-    return { 
-      success: true 
-    };
-  } catch (error) {
-    console.error("Error updating document:", error);
-    return { 
-      success: false, 
-      error: error instanceof Error ? error.message : 'Unknown error occurred' 
-    };
-  }
-};
-
-const deleteData = async (collectionName: string, docIds: string[]): Promise<FirebaseResult> => {
-  try {
-    console.log("Deleting documents from", collectionName, docIds);
-    
-    const deletePromises = docIds.map(id => deleteDoc(doc(db, collectionName, id)));
-    await Promise.all(deletePromises);
-    
-    return { 
-      success: true 
-    };
-  } catch (error) {
-    console.error("Error deleting documents:", error);
-    return { 
-      success: false, 
-      error: error instanceof Error ? error.message : 'Unknown error occurred' 
-    };
-  }
-};
-
 // Constants
 const PAGE_LIMIT = 15;
-const SEARCH_DEBOUNCE_DELAY = 300;
+const SEARCH_DEBOUNCE_DELAY = 300; // milliseconds
 
 // Helper functions
 const parseDate = (date: any): Date | null => {
@@ -187,7 +96,7 @@ const getCurrentMonthDates = () => {
   };
 };
 
-// Upload utility types and functions
+// Upload utility types and functions (moved inline to avoid import issues)
 interface UploadResult {
   success: boolean;
   message: string;
@@ -206,16 +115,17 @@ interface ValidationError {
   expectedType?: string;
 }
 
+// Simple upload function without schema validation for now
 const uploadDataWithValidation = async (file: File, collectionName: string): Promise<UploadResult> => {
   try {
-    // For now, we'll use a simple implementation
-    // In a real scenario, you would parse the file and add each record individually
+    // For now, we'll simulate a successful upload
+    // In a real implementation, you would parse the file and upload to Firebase
     await new Promise(resolve => setTimeout(resolve, 2000));
     
     return {
       success: true,
       message: `Successfully uploaded data to ${collectionName}`,
-      successCount: 10,
+      successCount: 10, // Simulated count
       errorCount: 0,
       totalRecords: 10
     };
@@ -241,6 +151,7 @@ const formatValidationErrors = (validationErrors: ValidationError[]): string => 
   return message;
 };
 
+// Helper function to safely convert people value to number for calculations
 const safePeopleToNumber = (people: string | number | undefined): number => {
   if (people === undefined || people === null) return 0;
   if (typeof people === 'number') return people;
@@ -251,6 +162,7 @@ const safePeopleToNumber = (people: string | number | undefined): number => {
   return 0;
 };
 
+// Helper function to display people value as it comes from database
 const displayPeopleValue = (people: string | number | undefined): string => {
   if (people === undefined || people === null) return '0';
   return people.toString();
@@ -265,16 +177,11 @@ const BoreholePage = () => {
   const [exportLoading, setExportLoading] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [uploadLoading, setUploadLoading] = useState(false);
-  const [createLoading, setCreateLoading] = useState(false);
-  const [editLoading, setEditLoading] = useState(false);
   const [selectedRecords, setSelectedRecords] = useState<string[]>([]);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
-  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
-  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [viewingRecord, setViewingRecord] = useState<Borehole | null>(null);
-  const [editingRecord, setEditingRecord] = useState<Borehole | null>(null);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadProgress, setUploadProgress] = useState<number>(0);
   
@@ -286,22 +193,13 @@ const BoreholePage = () => {
     search: "",
     startDate: currentMonth.startDate,
     endDate: currentMonth.endDate,
-    location: "all"
-  });
-
-  const [newBorehole, setNewBorehole] = useState<Partial<Borehole>>({
-    date: new Date().toISOString().split('T')[0],
-    location: "",
-    people: 0,
-    waterUsed: 0,
-    drilled: false,
-    maintained: false
+    location: "all",
+    region: "all"
   });
 
   const [stats, setStats] = useState<Stats>({
     totalBoreholes: 0,
-    drilledBoreholes: 0,
-    maintainedBoreholes: 0,
+    totalRegions: 0,
     totalPeople: 0,
     totalWaterUsed: 0
   });
@@ -328,6 +226,7 @@ const BoreholePage = () => {
       
       if (!data.BoreholeStorage) {
         console.warn("No BoreholeStorage data found in response");
+        // Check all available collections
         Object.keys(data).forEach(key => {
           console.log(`Available collection: ${key}`, data[key]);
           if (Array.isArray(data[key]) && data[key].length > 0) {
@@ -341,8 +240,10 @@ const BoreholePage = () => {
       const boreholeData = Array.isArray(data.BoreholeStorage) ? data.BoreholeStorage.map((item: any, index: number) => {
         console.log(`Processing borehole item ${index}:`, item);
         
+        // Handle date parsing
         let dateValue = item.date || item.Date || item.createdAt || item.timestamp;
         
+        // If it's a Firestore timestamp object
         if (dateValue && typeof dateValue === 'object') {
           if (dateValue.toDate && typeof dateValue.toDate === 'function') {
             dateValue = dateValue.toDate();
@@ -353,14 +254,15 @@ const BoreholePage = () => {
           }
         }
 
+        // Handle different field name variations for borehole data
+        // Keep people field as it comes from database (string or number)
         const processedItem = {
           id: item.id || `borehole-${index}-${Date.now()}`,
           date: dateValue,
-          location: item.BoreholeLocation || item.location || 'No location',
-          people: item.PeopleUsingBorehole || item.people || 0,
-          waterUsed: item.WaterUsed || item.waterUsed || 0,
-          drilled: item.drilled || false,
-          maintained: item.maintained || false
+          location: item.BoreholeLocation || 'No location',
+          region: item.Region || '',
+          people: item.PeopleUsingBorehole || 0, // Keep original type
+          waterUsed: item.WaterUsed || 0
         };
 
         console.log(`Processed borehole item ${index}:`, processedItem);
@@ -390,8 +292,7 @@ const BoreholePage = () => {
       setFilteredBoreholes([]);
       setStats({
         totalBoreholes: 0,
-        drilledBoreholes: 0,
-        maintainedBoreholes: 0,
+        totalRegions: 0,
         totalPeople: 0,
         totalWaterUsed: 0
       });
@@ -401,6 +302,11 @@ const BoreholePage = () => {
     console.log("Applying filters to", allBoreholes.length, "borehole records");
     
     let filtered = allBoreholes.filter(record => {
+      // Region filter
+      if (filters.region !== "all" && record.region?.toLowerCase() !== filters.region.toLowerCase()) {
+        return false;
+      }
+
       // Location filter
       if (filters.location !== "all" && record.location?.toLowerCase() !== filters.location.toLowerCase()) {
         return false;
@@ -421,6 +327,7 @@ const BoreholePage = () => {
           if (startDate && recordDateOnly < startDate) return false;
           if (endDate && recordDateOnly > endDate) return false;
         } else if (filters.startDate || filters.endDate) {
+          // If we have date filters but no valid date on record, exclude it
           return false;
         }
       }
@@ -428,7 +335,10 @@ const BoreholePage = () => {
       // Search filter
       if (filters.search) {
         const searchTerm = filters.search.toLowerCase();
-        const searchMatch = record.location?.toLowerCase().includes(searchTerm);
+        const searchMatch = [
+          record.location, 
+          record.region
+        ].some(field => field?.toLowerCase().includes(searchTerm));
         if (!searchMatch) return false;
       }
 
@@ -438,18 +348,18 @@ const BoreholePage = () => {
     console.log("Filtered to", filtered.length, "borehole records");
     setFilteredBoreholes(filtered);
     
-    // Update stats
+    // Update stats - use safe conversion for calculations
     const totalPeople = filtered.reduce((sum, record) => sum + safePeopleToNumber(record.people), 0);
     const totalWaterUsed = filtered.reduce((sum, record) => sum + (record.waterUsed || 0), 0);
-    const drilledBoreholes = filtered.filter(record => record.drilled).length;
-    const maintainedBoreholes = filtered.filter(record => record.maintained).length;
+    
+    // Count unique regions from filtered data
+    const uniqueRegions = new Set(filtered.map(f => f.region).filter(Boolean));
 
-    console.log("Stats - Total Boreholes:", filtered.length, "Drilled:", drilledBoreholes, "Maintained:", maintainedBoreholes, "People:", totalPeople, "Water Used:", totalWaterUsed);
+    console.log("Stats - Total Boreholes:", filtered.length, "Regions:", uniqueRegions.size, "People:", totalPeople, "Water Used:", totalWaterUsed);
 
     setStats({
       totalBoreholes: filtered.length,
-      drilledBoreholes,
-      maintainedBoreholes,
+      totalRegions: uniqueRegions.size,
       totalPeople,
       totalWaterUsed
     });
@@ -475,10 +385,12 @@ const BoreholePage = () => {
 
   // Optimized search handler with debouncing
   const handleSearch = useCallback((value: string) => {
+    // Clear previous timeout
     if (searchTimeoutRef.current) {
       clearTimeout(searchTimeoutRef.current);
     }
 
+    // Set new timeout
     searchTimeoutRef.current = setTimeout(() => {
       setFilters(prev => ({ ...prev, search: value }));
       setPagination(prev => ({ ...prev, page: 1 }));
@@ -500,129 +412,6 @@ const BoreholePage = () => {
     setPagination(prev => ({ ...prev, page: 1 }));
   }, []);
 
-  // Create functionality
-  const handleCreateBorehole = async () => {
-    try {
-      setCreateLoading(true);
-
-      // Validate required fields
-      if (!newBorehole.location) {
-        toast({
-          title: "Validation Error",
-          description: "Location is a required field",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      const boreholeData = {
-        BoreholeLocation: newBorehole.location,
-        PeopleUsingBorehole: newBorehole.people || 0,
-        WaterUsed: newBorehole.waterUsed || 0,
-        drilled: newBorehole.drilled || false,
-        maintained: newBorehole.maintained || false,
-        date: new Date(newBorehole.date || new Date())
-      };
-
-      console.log("Creating new borehole:", boreholeData);
-
-      // Add to Firebase
-      const result = await addData("BoreholeStorage", boreholeData);
-
-      if (result.success) {
-        toast({
-          title: "Success",
-          description: "Borehole record created successfully",
-        });
-
-        // Reset form and close dialog
-        setNewBorehole({
-          date: new Date().toISOString().split('T')[0],
-          location: "",
-          people: 0,
-          waterUsed: 0,
-          drilled: false,
-          maintained: false
-        });
-        setIsCreateDialogOpen(false);
-
-        // Refresh data
-        await fetchAllData();
-      } else {
-        throw new Error(result.error || "Failed to create borehole record");
-      }
-
-    } catch (error) {
-      console.error("Error creating borehole:", error);
-      toast({
-        title: "Create Failed",
-        description: "Failed to create borehole record. Please try again.",
-        variant: "destructive",
-      });
-    } finally {
-      setCreateLoading(false);
-    }
-  };
-
-  // Edit functionality
-  const handleEditBorehole = async () => {
-    if (!editingRecord) return;
-
-    try {
-      setEditLoading(true);
-
-      // Validate required fields
-      if (!editingRecord.location) {
-        toast({
-          title: "Validation Error",
-          description: "Location is a required field",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      const boreholeData = {
-        BoreholeLocation: editingRecord.location,
-        PeopleUsingBorehole: editingRecord.people || 0,
-        WaterUsed: editingRecord.waterUsed || 0,
-        drilled: editingRecord.drilled || false,
-        maintained: editingRecord.maintained || false,
-        date: editingRecord.date
-      };
-
-      console.log("Updating borehole:", editingRecord.id, boreholeData);
-
-      // Update in Firebase
-      const result = await updateData("BoreholeStorage", editingRecord.id, boreholeData);
-
-      if (result.success) {
-        toast({
-          title: "Success",
-          description: "Borehole record updated successfully",
-        });
-
-        // Close dialog and reset
-        setIsEditDialogOpen(false);
-        setEditingRecord(null);
-
-        // Refresh data
-        await fetchAllData();
-      } else {
-        throw new Error(result.error || "Failed to update borehole record");
-      }
-
-    } catch (error) {
-      console.error("Error updating borehole:", error);
-      toast({
-        title: "Update Failed",
-        description: "Failed to update borehole record. Please try again.",
-        variant: "destructive",
-      });
-    } finally {
-      setEditLoading(false);
-    }
-  };
-
   // Delete functionality
   const handleDeleteSelected = async () => {
     if (selectedRecords.length === 0) {
@@ -637,23 +426,22 @@ const BoreholePage = () => {
     try {
       setDeleteLoading(true);
       
-      // Use the deleteData function
-      const result = await deleteData("BoreholeStorage", selectedRecords);
-
-      if (result.success) {
-        // Update local state
-        setAllBoreholes(prev => prev.filter(record => !selectedRecords.includes(record.id)));
-        setSelectedRecords([]);
-        
-        toast({
-          title: "Records Deleted",
-          description: `Successfully deleted ${selectedRecords.length} records`,
-        });
-        
-        setIsDeleteDialogOpen(false);
-      } else {
-        throw new Error(result.error || "Failed to delete records");
-      }
+      // Simulate deletion - replace with actual Firebase delete operation
+      console.log("Deleting records:", selectedRecords);
+      
+      // In a real implementation, you would call a Firebase delete function here
+      // await deleteBoreholeRecords(selectedRecords);
+      
+      // For now, we'll just filter them out from the local state
+      setAllBoreholes(prev => prev.filter(record => !selectedRecords.includes(record.id)));
+      setSelectedRecords([]);
+      
+      toast({
+        title: "Records Deleted",
+        description: `Successfully deleted ${selectedRecords.length} records`,
+      });
+      
+      setIsDeleteDialogOpen(false);
     } catch (error) {
       console.error("Error deleting records:", error);
       toast({
@@ -697,6 +485,7 @@ const BoreholePage = () => {
       setUploadLoading(true);
       setUploadProgress(0);
       
+      // Simulate upload progress
       const progressInterval = setInterval(() => {
         setUploadProgress(prev => {
           if (prev >= 90) {
@@ -707,6 +496,7 @@ const BoreholePage = () => {
         });
       }, 200);
 
+      // Use the upload utility
       const result: UploadResult = await uploadDataWithValidation(uploadFile, "BoreholeStorage");
       
       clearInterval(progressInterval);
@@ -718,11 +508,13 @@ const BoreholePage = () => {
           description: result.message,
         });
         
+        // Refresh data
         await fetchAllData();
         setIsUploadDialogOpen(false);
         setUploadFile(null);
         setUploadProgress(0);
         
+        // Reset file input
         if (fileInputRef.current) {
           fileInputRef.current.value = '';
         }
@@ -768,13 +560,12 @@ const BoreholePage = () => {
       const csvData = filteredBoreholes.map(record => [
         formatDate(record.date),
         record.location || 'N/A',
-        displayPeopleValue(record.people),
-        (record.waterUsed || 0).toString(),
-        record.drilled ? 'Yes' : 'No',
-        record.maintained ? 'Yes' : 'No'
+        record.region || 'N/A',
+        displayPeopleValue(record.people), // Use display function
+        (record.waterUsed || 0).toString()
       ]);
 
-      const headers = ['Date', 'Borehole Location', 'People Using Water', 'Water Used', 'Drilled', 'Maintained'];
+      const headers = ['Date', 'Borehole Location', 'Region', 'People Using Water', 'Water Used'];
       const csvContent = [headers, ...csvData]
         .map(row => row.map(field => `"${field}"`).join(','))
         .join('\n');
@@ -843,15 +634,17 @@ const BoreholePage = () => {
     setIsViewDialogOpen(true);
   };
 
-  const openEditDialog = (record: Borehole) => {
-    setEditingRecord(record);
-    setIsEditDialogOpen(true);
-  };
-
   // Memoized values
+  const uniqueRegions = useMemo(() => {
+    const regions = [...new Set(allBoreholes.map(f => f.region).filter(Boolean))];
+    console.log("Unique regions:", regions);
+    return regions;
+  }, [allBoreholes]);
+
   const currentPageRecords = useMemo(getCurrentPageRecords, [getCurrentPageRecords]);
 
   const clearAllFilters = () => {
+    // Clear any pending search timeout
     if (searchTimeoutRef.current) {
       clearTimeout(searchTimeoutRef.current);
     }
@@ -860,7 +653,8 @@ const BoreholePage = () => {
       search: "",
       startDate: "",
       endDate: "",
-      location: "all"
+      location: "all",
+      region: "all"
     });
   };
 
@@ -868,8 +662,8 @@ const BoreholePage = () => {
     setFilters(prev => ({ ...prev, ...currentMonth }));
   };
 
-  // Memoized components
-  const StatsCard = useCallback(({ title, value, icon: Icon, description, additionalInfo }: any) => (
+  // Memoized components to prevent re-renders
+  const StatsCard = useCallback(({ title, value, icon: Icon, description }: any) => (
     <Card className="bg-white text-slate-900 shadow-lg border border-gray-200 relative overflow-hidden">
       <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-blue-500 to-cyan-600"></div>
       
@@ -886,11 +680,6 @@ const BoreholePage = () => {
             <p className="text-xs text-slate-600 mt-2 bg-slate-50 px-2 py-1 rounded-md border border-slate-100">
               {description}
             </p>
-          )}
-          {additionalInfo && (
-            <div className="text-xs text-slate-500 mt-1 space-y-1">
-              {additionalInfo}
-            </div>
           )}
         </div>
       </CardContent>
@@ -909,6 +698,20 @@ const BoreholePage = () => {
         />
       </div>
 
+      <div className="space-y-2">
+        <Label htmlFor="region" className="font-semibold text-gray-700">Region</Label>
+        <Select value={filters.region} onValueChange={(value) => handleFilterChange("region", value)}>
+          <SelectTrigger className="border-gray-300 focus:border-blue-500 focus:ring-blue-500 bg-white">
+            <SelectValue placeholder="Select region" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Regions</SelectItem>
+            {uniqueRegions.slice(0, 20).map(region => (
+              <SelectItem key={region} value={region}>{region}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
       <div className="space-y-2">
         <Label htmlFor="startDate" className="font-semibold text-gray-700">From Date</Label>
         <Input
@@ -931,7 +734,7 @@ const BoreholePage = () => {
         />
       </div>
     </div>
-  ), [filters, handleSearch, handleFilterChange]);
+  ), [filters, uniqueRegions, handleSearch, handleFilterChange]);
 
   const TableRow = useCallback(({ record }: { record: Borehole }) => (
     <tr className="border-b hover:bg-blue-50 transition-colors duration-200 group text-sm">
@@ -944,20 +747,15 @@ const BoreholePage = () => {
       <td className="py-3 px-4">{formatDate(record.date)}</td>
       <td className="py-3 px-4 font-medium">{record.location || 'N/A'}</td>
       <td className="py-3 px-4">
+        <Badge className="bg-green-100 text-green-800">
+          {record.region || 'N/A'}
+        </Badge>
+      </td>
+      <td className="py-3 px-4">
         <span className="font-bold text-blue-700">{displayPeopleValue(record.people)}</span>
       </td>
       <td className="py-3 px-4">
         <span className="font-bold text-cyan-700">{record.waterUsed || 0} L</span>
-      </td>
-      <td className="py-3 px-4">
-        <div className="flex gap-1">
-          <Badge variant={record.drilled ? "default" : "secondary"} className={record.drilled ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-800"}>
-            {record.drilled ? 'Drilled' : 'Not Drilled'}
-          </Badge>
-          <Badge variant={record.maintained ? "default" : "secondary"} className={record.maintained ? "bg-blue-100 text-blue-800" : "bg-gray-100 text-gray-800"}>
-            {record.maintained ? 'Maintained' : 'Not Maintained'}
-          </Badge>
-        </div>
       </td>
       <td className="py-3 px-4">
         <div className="flex gap-2">
@@ -970,32 +768,22 @@ const BoreholePage = () => {
             <Eye className="h-4 w-4 text-blue-500" />
           </Button>
           {userIsChiefAdmin && (
-            <>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => openEditDialog(record)}
-                className="h-8 w-8 p-0 hover:bg-green-50 hover:text-green-600 border-green-200"
-              >
-                <Edit className="h-4 w-4 text-green-500" />
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setSelectedRecords([record.id]);
-                  setIsDeleteDialogOpen(true);
-                }}
-                className="h-8 w-8 p-0 hover:bg-red-50 hover:text-red-600 border-red-200"
-              >
-                <Trash2 className="h-4 w-4 text-red-500" />
-              </Button>
-            </>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setSelectedRecords([record.id]);
+                setIsDeleteDialogOpen(true);
+              }}
+              className="h-8 w-8 p-0 hover:bg-red-50 hover:text-red-600 border-red-200"
+            >
+              <Trash2 className="h-4 w-4 text-red-500" />
+            </Button>
           )}
         </div>
       </td>
     </tr>
-  ), [selectedRecords, handleSelectRecord, openViewDialog, openEditDialog, userIsChiefAdmin]);
+  ), [selectedRecords, handleSelectRecord, openViewDialog, userIsChiefAdmin]);
 
   return (
     <div className="space-y-6">
@@ -1027,14 +815,6 @@ const BoreholePage = () => {
           
           {userIsChiefAdmin && (
             <>
-              <Button 
-                onClick={() => setIsCreateDialogOpen(true)}
-                className="bg-gradient-to-r from-green-600 to-emerald-700 hover:from-green-700 hover:to-emerald-800 text-white shadow-md text-xs"
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                Add Borehole
-              </Button>
-              
               <Button 
                 onClick={() => setIsUploadDialogOpen(true)}
                 className="bg-green-50 text-green-500 hover:bg-blue-50"
@@ -1068,17 +848,19 @@ const BoreholePage = () => {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <StatsCard 
           title="Total Boreholes" 
           value={stats.totalBoreholes} 
           icon={Building}
-          additionalInfo={
-            <>
-              <div>• {stats.drilledBoreholes} drilled</div>
-              <div>• {stats.maintainedBoreholes} maintained</div>
-            </>
-          }
+          description="Water sources monitored"
+        />
+
+        <StatsCard 
+          title="Regions" 
+          value={stats.totalRegions} 
+          icon={Globe}
+          description="Unique regions covered"
         />
 
         <StatsCard 
@@ -1129,9 +911,9 @@ const BoreholePage = () => {
                       </th>
                       <th className="py-3 px-4 font-medium text-gray-600">Date</th>
                       <th className="py-3 px-4 font-medium text-gray-600">Borehole Location</th>
+                      <th className="py-3 px-4 font-medium text-gray-600">Region</th>
                       <th className="py-3 px-4 font-medium text-gray-600">People Using Water</th>
                       <th className="py-3 px-4 font-medium text-gray-600">Water Used</th>
-                      <th className="py-3 px-4 font-medium text-gray-600">Status</th>
                       <th className="py-3 px-4 font-medium text-gray-600">Actions</th>
                     </tr>
                   </thead>
@@ -1203,6 +985,10 @@ const BoreholePage = () => {
                     <Label className="text-sm font-medium text-slate-600">Borehole Location</Label>
                     <p className="text-slate-900 font-medium">{viewingRecord.location || 'N/A'}</p>
                   </div>
+                  <div>
+                    <Label className="text-sm font-medium text-slate-600">Region</Label>
+                    <Badge className="bg-green-100 text-green-800">{viewingRecord.region || 'N/A'}</Badge>
+                  </div>
                 </div>
               </div>
 
@@ -1224,30 +1010,6 @@ const BoreholePage = () => {
                     <p className="text-slate-900 font-medium text-lg font-bold text-cyan-700">
                       {viewingRecord.waterUsed || 0} liters
                     </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Status Information */}
-              <div className="bg-slate-50 rounded-xl p-4">
-                <h3 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
-                  <Building className="h-4 w-4" />
-                  Borehole Status
-                </h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label className="text-sm font-medium text-slate-600">Drilled</Label>
-                    <Badge variant={viewingRecord.drilled ? "default" : "secondary"} 
-                      className={viewingRecord.drilled ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-800"}>
-                      {viewingRecord.drilled ? 'Yes' : 'No'}
-                    </Badge>
-                  </div>
-                  <div>
-                    <Label className="text-sm font-medium text-slate-600">Maintained</Label>
-                    <Badge variant={viewingRecord.maintained ? "default" : "secondary"} 
-                      className={viewingRecord.maintained ? "bg-blue-100 text-blue-800" : "bg-gray-100 text-gray-800"}>
-                      {viewingRecord.maintained ? 'Yes' : 'No'}
-                    </Badge>
                   </div>
                 </div>
               </div>
@@ -1278,225 +1040,6 @@ const BoreholePage = () => {
               className="bg-gradient-to-r from-blue-500 to-cyan-600 hover:from-blue-600 hover:to-cyan-700 text-white"
             >
               Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Create Borehole Dialog */}
-      <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
-        <DialogContent className="sm:max-w-md bg-white rounded-2xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-green-600">
-              <Plus className="h-5 w-5" />
-              Add New Borehole
-            </DialogTitle>
-            <DialogDescription>
-              Create a new borehole record in the database
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="create-date" className="font-semibold text-gray-700">Date</Label>
-              <Input
-                id="create-date"
-                type="date"
-                value={newBorehole.date as string}
-                onChange={(e) => setNewBorehole(prev => ({ ...prev, date: e.target.value }))}
-                className="border-gray-300 focus:border-blue-500 focus:ring-blue-500 bg-white"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="create-location" className="font-semibold text-gray-700">Borehole Location *</Label>
-              <Input
-                id="create-location"
-                placeholder="Enter borehole location"
-                value={newBorehole.location || ''}
-                onChange={(e) => setNewBorehole(prev => ({ ...prev, location: e.target.value }))}
-                className="border-gray-300 focus:border-blue-500 focus:ring-blue-500 bg-white"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="create-people" className="font-semibold text-gray-700">People Using Water</Label>
-                <Input
-                  id="create-people"
-                  type="number"
-                  placeholder="0"
-                  value={newBorehole.people || ''}
-                  onChange={(e) => setNewBorehole(prev => ({ ...prev, people: parseInt(e.target.value) || 0 }))}
-                  className="border-gray-300 focus:border-blue-500 focus:ring-blue-500 bg-white"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="create-water" className="font-semibold text-gray-700">Water Used (L)</Label>
-                <Input
-                  id="create-water"
-                  type="number"
-                  placeholder="0"
-                  value={newBorehole.waterUsed || ''}
-                  onChange={(e) => setNewBorehole(prev => ({ ...prev, waterUsed: parseInt(e.target.value) || 0 }))}
-                  className="border-gray-300 focus:border-blue-500 focus:ring-blue-500 bg-white"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="create-drilled"
-                  checked={newBorehole.drilled || false}
-                  onCheckedChange={(checked) => setNewBorehole(prev => ({ ...prev, drilled: checked as boolean }))}
-                />
-                <Label htmlFor="create-drilled" className="font-semibold text-gray-700">Drilled</Label>
-              </div>
-
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="create-maintained"
-                  checked={newBorehole.maintained || false}
-                  onCheckedChange={(checked) => setNewBorehole(prev => ({ ...prev, maintained: checked as boolean }))}
-                />
-                <Label htmlFor="create-maintained" className="font-semibold text-gray-700">Maintained</Label>
-              </div>
-            </div>
-          </div>
-
-          <DialogFooter className="flex gap-2 sm:gap-0">
-            <Button
-              variant="outline"
-              onClick={() => {
-                setIsCreateDialogOpen(false);
-                setNewBorehole({
-                  date: new Date().toISOString().split('T')[0],
-                  location: "",
-                  people: 0,
-                  waterUsed: 0,
-                  drilled: false,
-                  maintained: false
-                });
-              }}
-              disabled={createLoading}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleCreateBorehole}
-              disabled={createLoading || !newBorehole.location}
-              className="bg-gradient-to-r from-green-600 to-emerald-700 hover:from-green-700 hover:to-emerald-800 text-white"
-            >
-              {createLoading ? "Creating..." : "Create Borehole"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Edit Borehole Dialog */}
-      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="sm:max-w-md bg-white rounded-2xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-blue-600">
-              <Edit className="h-5 w-5" />
-              Edit Borehole
-            </DialogTitle>
-            <DialogDescription>
-              Update the borehole record information
-            </DialogDescription>
-          </DialogHeader>
-          
-          {editingRecord && (
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="edit-date" className="font-semibold text-gray-700">Date</Label>
-                <Input
-                  id="edit-date"
-                  type="date"
-                  value={formatDate(editingRecord.date).split(' ').reverse().join('-')}
-                  onChange={(e) => setEditingRecord(prev => prev ? { ...prev, date: new Date(e.target.value) } : null)}
-                  className="border-gray-300 focus:border-blue-500 focus:ring-blue-500 bg-white"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="edit-location" className="font-semibold text-gray-700">Borehole Location *</Label>
-                <Input
-                  id="edit-location"
-                  placeholder="Enter borehole location"
-                  value={editingRecord.location || ''}
-                  onChange={(e) => setEditingRecord(prev => prev ? { ...prev, location: e.target.value } : null)}
-                  className="border-gray-300 focus:border-blue-500 focus:ring-blue-500 bg-white"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="edit-people" className="font-semibold text-gray-700">People Using Water</Label>
-                  <Input
-                    id="edit-people"
-                    type="number"
-                    placeholder="0"
-                    value={editingRecord.people || ''}
-                    onChange={(e) => setEditingRecord(prev => prev ? { ...prev, people: parseInt(e.target.value) || 0 } : null)}
-                    className="border-gray-300 focus:border-blue-500 focus:ring-blue-500 bg-white"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="edit-water" className="font-semibold text-gray-700">Water Used (L)</Label>
-                  <Input
-                    id="edit-water"
-                    type="number"
-                    placeholder="0"
-                    value={editingRecord.waterUsed || ''}
-                    onChange={(e) => setEditingRecord(prev => prev ? { ...prev, waterUsed: parseInt(e.target.value) || 0 } : null)}
-                    className="border-gray-300 focus:border-blue-500 focus:ring-blue-500 bg-white"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="edit-drilled"
-                    checked={editingRecord.drilled || false}
-                    onCheckedChange={(checked) => setEditingRecord(prev => prev ? { ...prev, drilled: checked as boolean } : null)}
-                  />
-                  <Label htmlFor="edit-drilled" className="font-semibold text-gray-700">Drilled</Label>
-                </div>
-
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="edit-maintained"
-                    checked={editingRecord.maintained || false}
-                    onCheckedChange={(checked) => setEditingRecord(prev => prev ? { ...prev, maintained: checked as boolean } : null)}
-                  />
-                  <Label htmlFor="edit-maintained" className="font-semibold text-gray-700">Maintained</Label>
-                </div>
-              </div>
-            </div>
-          )}
-
-          <DialogFooter className="flex gap-2 sm:gap-0">
-            <Button
-              variant="outline"
-              onClick={() => {
-                setIsEditDialogOpen(false);
-                setEditingRecord(null);
-              }}
-              disabled={editLoading}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleEditBorehole}
-              disabled={editLoading || !editingRecord?.location}
-              className="bg-gradient-to-r from-blue-600 to-cyan-700 hover:from-blue-700 hover:to-cyan-800 text-white"
-            >
-              {editLoading ? "Updating..." : "Update Borehole"}
             </Button>
           </DialogFooter>
         </DialogContent>

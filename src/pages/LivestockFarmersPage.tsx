@@ -1172,7 +1172,7 @@ const LivestockFarmersPage = () => {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <StatsCard 
           title="TOTAL FARMERS" 
-          value={stats.totalFarmers.toLocaleString()} 
+          value={stats.totalFarmers} 
           icon={Users}
         >
           <div className="flex gap-4 justify-between text-xs text-slate-600 mt-2">
@@ -1187,14 +1187,14 @@ const LivestockFarmersPage = () => {
 
         <StatsCard 
           title="ANIMAL CENSUS" 
-          value={stats.totalGoats.toLocaleString()} 
+          value={stats.totalGoats} 
           icon={Beef}
           description="Across all farmers"
         />
 
         <StatsCard 
           title="TRAINED FARMERS" 
-          value={stats.trainedFarmers.toLocaleString()} 
+          value={stats.trainedFarmers} 
           icon={GraduationCap}
           description={`${stats.totalFarmers > 0 ? ((stats.trainedFarmers / stats.totalFarmers) * 100).toFixed(1) : '0'}% of total farmers`}
         />

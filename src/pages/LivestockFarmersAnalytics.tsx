@@ -768,7 +768,7 @@ const LivestockFarmersAnalytics = () => {
       <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-3">
         <StatsCard 
           title="Total Farmers" 
-          value={stats.total.toLocaleString()} 
+          value={stats.total} 
           icon={Users}
           description={`${stats.maleFarmers} male, ${stats.femaleFarmers} female`}
           color="navy"
@@ -776,7 +776,7 @@ const LivestockFarmersAnalytics = () => {
 
         <StatsCard 
           title="Trained Farmers" 
-          value={stats.trained.toLocaleString()} 
+          value={stats.trained} 
           icon={GraduationCap}
           description={`${stats.trainingRate.toFixed(1)}% of livestock farmers`}
           color="yellow"

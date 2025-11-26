@@ -31,8 +31,7 @@ const DashboardLayout = () => {
       
       try {
         const data = await fetchData();
-     const users: AppUser[] = data?.users ?? ([] as AppUser[]);
-
+        const users: AppUser[] = data?.users || [];
 
         // Find user by email
         const userData = users.find((u) => u.email === user.email);

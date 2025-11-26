@@ -6,7 +6,6 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
 
-
 import Auth from "./pages/Auth";
 import DashboardLayout from "./components/DashboardLayout";
 import DashboardOverview from "./pages/DashboardOverview";
@@ -20,7 +19,6 @@ import CapacityBuildingPage from "./pages/CapacityBuildingPage";
 import LivestockOfftakePage from "./pages/LivestockOfftakePage";
 import ActivitiesPage from "./pages/ActivitiesPage"
 import OnboardingPage from "./pages/onboardingpage";
-import  AnimalHealthPage  from "@/pages/Animalhealth";
 
 import FodderOfftakePage from "./pages/FodderOfftakePage";
 import UserManagementPage from "./pages/UserManagementPage";
@@ -81,8 +79,7 @@ const App = () => (
               <Route path="fodder-offtake" element={<FodderOfftakePage />} />
               
               <Route path="activities" element={<ActivitiesPage />} />
-              <Route path="training" element={<OnboardingPage />} />
-              <Route path="Animal-health" element={<AnimalHealthPage />} />
+              <Route path="onboarding" element={<OnboardingPage />} />
 
               {/* Admin Only Routes */}
               <Route 
