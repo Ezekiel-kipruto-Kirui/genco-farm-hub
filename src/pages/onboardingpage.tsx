@@ -19,6 +19,8 @@ interface FarmerData {
     phoneNo: string;
     location: string;
     region: string;
+    gender: string;
+    county: string; // Fixed capitalization to match usage
 }
 
 interface StaffData {
@@ -48,6 +50,9 @@ interface Stats {
     uniqueLocations: number;
     completedSessions: number;
     pendingSessions: number;
+    maleFarmers: number;
+    femaleFarmers: number;
+    uniqueCounties: number; // Added county stats
 }
 
 // Exportable isChiefAdmin function
@@ -108,7 +113,7 @@ const OnboardingPage = () => {
         { name: "", role: "" }
     ]);
     const [farmers, setFarmers] = useState<FarmerData[]>([
-        { name: "", idNo: "", phoneNo: "", location: "", region: "" }
+        { name: "", idNo: "", phoneNo: "", location: "", region: "", gender: "", county: "" } // Fixed county field
     ]);
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
@@ -143,7 +148,10 @@ const OnboardingPage = () => {
         totalOnboarding: 0,
         uniqueLocations: 0,
         completedSessions: 0,
-        pendingSessions: 0
+        pendingSessions: 0,
+        maleFarmers: 0,
+        femaleFarmers: 0,
+        uniqueCounties: 0 // Added county stats
     });
 
     // Get current month dates for default filter
@@ -242,15 +250,27 @@ const OnboardingPage = () => {
         const allFarmers = filtered.flatMap(record => record.farmers);
         const uniqueFarmers = new Set(allFarmers.map(farmer => farmer.idNo || farmer.name));
         const uniqueLocations = new Set(allFarmers.map(farmer => farmer.location).filter(Boolean));
+        const uniqueCounties = new Set(allFarmers.map(farmer => farmer.county).filter(Boolean)); // Added county stats
         const completedSessions = filtered.filter(record => record.status === 'completed').length;
         const pendingSessions = filtered.filter(record => record.status === 'pending').length;
+        
+        // Calculate gender stats
+        const maleFarmers = allFarmers.filter(farmer => 
+            farmer.gender && farmer.gender.toLowerCase() === 'male'
+        ).length;
+        const femaleFarmers = allFarmers.filter(farmer => 
+            farmer.gender && farmer.gender.toLowerCase() === 'female'
+        ).length;
 
         const calculatedStats = {
             totalFarmers: uniqueFarmers.size,
             totalOnboarding: filtered.length,
             uniqueLocations: uniqueLocations.size,
+            uniqueCounties: uniqueCounties.size, // Added county stats
             completedSessions,
-            pendingSessions
+            pendingSessions,
+            maleFarmers,
+            femaleFarmers
         };
 
         return {
@@ -394,7 +414,7 @@ const OnboardingPage = () => {
     };
 
     const addFarmer = () => {
-        setFarmers(prev => [...prev, { name: "", idNo: "", phoneNo: "", location: "", region: "" }]);
+        setFarmers(prev => [...prev, { name: "", idNo: "", phoneNo: "", location: "", region: "", gender: "", county: "" }]); // Fixed county field
     };
 
     const removeFarmer = (index: number) => {
@@ -419,7 +439,7 @@ const OnboardingPage = () => {
             status: 'pending'
         });
         setStaff([{ name: "", role: "" }]);
-        setFarmers([{ name: "", idNo: "", phoneNo: "", location: "", region: "" }]);
+        setFarmers([{ name: "", idNo: "", phoneNo: "", location: "", region: "", gender: "", county: "" }]); // Fixed county field
     };
 
     const handleAddOnboarding = async () => {
@@ -508,7 +528,7 @@ const OnboardingPage = () => {
             status: record.status
         });
         setStaff(record.staff.length > 0 ? record.staff : [{ name: "", role: "" }]);
-        setFarmers(record.farmers.length > 0 ? record.farmers : [{ name: "", idNo: "", phoneNo: "", location: "", region: "" }]);
+        setFarmers(record.farmers.length > 0 ? record.farmers : [{ name: "", idNo: "", phoneNo: "", location: "", region: "", gender: "", county: "" }]); // Fixed county field
         setIsDialogOpen(true);
     };
 
@@ -595,10 +615,12 @@ const OnboardingPage = () => {
     const validateExcelData = (data: any[]): FarmerData[] => {
         return data.filter(item => item.name).map(item => ({
             name: item.name || "",
+            gender: item.gender || item.Gender || "",
             idNo: item.idNo || item.idNumber || item.farmeridNo || "",
             phoneNo: item.phoneNo || item.phoneNumber || item.farmerphoneNo || "",
             location: item.location || item.farmerlocation || "",
-            region: item.region || item.farmerregion || ""
+            region: item.region || item.farmerregion || "",
+            county: item.county || item.County || "" // Added county validation with multiple possible column names
         }));
     };
 
@@ -606,10 +628,12 @@ const OnboardingPage = () => {
         const templateData = [
             {
                 name: "Farmer Name",
+                gender: "Gender (Male/Female)",
                 idNo: "ID Number",
                 phoneNo: "Phone Number",
                 location: "Location",
-                region: "Region"
+                region: "Region",
+                county: "County" // Added county to template
             }
         ];
 
@@ -640,10 +664,12 @@ const OnboardingPage = () => {
                     Status: record.status,
                     'Staff Members': record.staff.map(s => `${s.name} (${s.role})`).join(', '),
                     'Farmer Name': farmer.name,
+                    'Farmer Gender': farmer.gender || 'N/A',
                     'Farmer ID': farmer.idNo,
                     'Phone Number': farmer.phoneNo,
                     Location: farmer.location,
                     Region: farmer.region,
+                    County: farmer.county || 'N/A', // Added county to export
                     'Created Date': record.createdAt?.toLocaleDateString() || 'N/A'
                 }))
             );
@@ -720,6 +746,25 @@ const OnboardingPage = () => {
             return [...new Set(regions)];
         }, [record.farmers]);
 
+        // Get unique counties from farmers in this record
+        const uniqueCounties = useMemo(() => {
+            const counties = record.farmers
+                .map(farmer => farmer.county)
+                .filter(county => county && county.trim() !== "");
+            return [...new Set(counties)];
+        }, [record.farmers]);
+
+        // Get gender distribution for this record
+        const genderStats = useMemo(() => {
+            const maleCount = record.farmers.filter(farmer => 
+                farmer.gender && farmer.gender.toLowerCase() === 'male'
+            ).length;
+            const femaleCount = record.farmers.filter(farmer => 
+                farmer.gender && farmer.gender.toLowerCase() === 'female'
+            ).length;
+            return { maleCount, femaleCount };
+        }, [record.farmers]);
+
         const isSelected = record.id ? selectedRecords.includes(record.id) : false;
 
         return (
@@ -775,7 +820,7 @@ const OnboardingPage = () => {
                         <div className="flex flex-row-1 justify-between m-2 p-1">
                             <div className="flex items-center justify-center gap-2 text-sm font-medium text-blue-700 mb-1">
                                 <User className="h-4 w-4" />
-                                <span>Staff</span>
+                                <span>Trainers</span>
                             </div>
                             <div className="text-md text-blue-800">
                                 {record.staff.length}
@@ -784,7 +829,7 @@ const OnboardingPage = () => {
                         <div className="flex flex-row-1 justify-between m-2 p-1">
                             <div className="flex items-center justify-center gap-2 text-sm font-medium text-green-700 mb-1">
                                 <Users className="h-4 w-4" />
-                                <span>Participants</span>
+                                <span>Farmers</span>
                             </div>
                             <div className="text-md text-green-800">
                                 {record.farmers.length}
@@ -797,7 +842,7 @@ const OnboardingPage = () => {
                         <div className="flex flex-row-1 justify-between m-2 p-1">
                             <div className="flex items-center justify-center gap-1 text-xs text-gray-600">
                                 <MapPin className="h-3 w-3" />
-                                <span>Regions</span>
+                                <span>Subcounty</span>
                             </div>
                             <div className="text-sm font-semibold text-green-600">
                                 {uniqueRegions.length > 0 ? (
@@ -820,6 +865,7 @@ const OnboardingPage = () => {
                         </div>
                     </div>
 
+                   
                     {/* Actions */}
                     <div className="flex gap-2 pt-3 border-t">
                         <Button
@@ -861,7 +907,7 @@ const OnboardingPage = () => {
         <div className="container mx-auto p-6 space-y-6">
             {/* Header - Export available for chief admin, Add only for chief admin */}
             <div className="flex justify-between items-center">
-                <h1 className="text-3xl font-bold">Onboarding</h1>
+                <h1 className="text-3xl font-bold">Additional Training</h1>
                 <div className="flex gap-2">
                     {/* Bulk Delete Button - Only show when records are selected */}
                     {userIsChiefAdmin && selectedRecords.length > 0 && (
@@ -884,22 +930,22 @@ const OnboardingPage = () => {
                     {userIsChiefAdmin && (
                         <Button onClick={openAddDialog}>
                             <Plus className="w-4 h-4 mr-2" />
-                            Add Onboarding
+                            Add Training
                         </Button>
                     )}
                 </div>
             </div>
 
             {/* Stats Cards - Available for all users */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <StatsCard 
                     title="TOTAL FARMERS" 
                     value={stats.totalFarmers} 
                     icon={Users}
-                    description="Unique farmers onboarded"
+                    description="Unique farmers trained"
                 />
                 <StatsCard 
-                    title="ONBOARDING SESSIONS" 
+                    title="TRAINING SESSIONS" 
                     value={stats.totalOnboarding} 
                     icon={GraduationCap}
                     description={`${stats.completedSessions} completed, ${stats.pendingSessions} pending`}
@@ -909,6 +955,12 @@ const OnboardingPage = () => {
                     value={stats.uniqueLocations} 
                     icon={MapPin}
                     description="Unique locations reached"
+                />
+                <StatsCard 
+                    title="COUNTIES COVERED" 
+                    value={stats.uniqueCounties} 
+                    icon={Map}
+                    description="Unique counties reached"
                 />
             </div>
 
@@ -968,7 +1020,7 @@ const OnboardingPage = () => {
             <Card className="shadow-lg border-0 bg-white">
                 <CardHeader className="flex flex-row items-center justify-between">
                     <div className="flex items-center gap-4">
-                        <CardTitle>Onboarding Records</CardTitle>
+                        <CardTitle>Additional Training Records</CardTitle>
                         {userIsChiefAdmin && displayedOnboarding.length > 0 && (
                             <div className="flex items-center gap-2">
                                 <input
@@ -1013,7 +1065,7 @@ const OnboardingPage = () => {
                     {loading ? (
                         <div className="text-center py-12">
                             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
-                            <p className="text-muted-foreground mt-2">Loading onboarding data...</p>
+                            <p className="text-muted-foreground mt-2">Loading additional training data...</p>
                         </div>
                     ) : displayedOnboarding.length === 0 ? (
                         <div className="text-center py-12 text-muted-foreground">
@@ -1103,7 +1155,7 @@ const OnboardingPage = () => {
                                 {/* Staff Section */}
                                 <div className="space-y-4">
                                     <div className="flex justify-between items-center">
-                                        <Label className="text-lg font-semibold">Staff Members ({staff.filter(s => s.name.trim() !== "").length})</Label>
+                                        <Label className="text-lg font-semibold">Trainers ({staff.filter(s => s.name.trim() !== "").length})</Label>
                                         <Button 
                                             type="button" 
                                             variant="outline" 
@@ -1111,7 +1163,7 @@ const OnboardingPage = () => {
                                             onClick={addStaff}
                                         >
                                             <UserPlus className="w-4 h-4 mr-1" />
-                                            Add Staff
+                                            Add trainer
                                         </Button>
                                     </div>
                                     
@@ -1119,7 +1171,7 @@ const OnboardingPage = () => {
                                         {staff.map((staffMember, index) => (
                                             <div key={index} className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end p-3 border rounded bg-white">
                                                 <div className="space-y-1">
-                                                    <Label htmlFor={`staff-name-${index}`}>Staff Name *</Label>
+                                                    <Label htmlFor={`staff-name-${index}`}>Trainer Name *</Label>
                                                     <Input
                                                         id={`staff-name-${index}`}
                                                         value={staffMember.name}
@@ -1128,7 +1180,7 @@ const OnboardingPage = () => {
                                                     />
                                                 </div>
                                                 <div className="space-y-1">
-                                                    <Label htmlFor={`staff-role-${index}`}>Staff Role *</Label>
+                                                    <Label htmlFor={`staff-role-${index}`}>Role *</Label>
                                                     <Input
                                                         id={`staff-role-${index}`}
                                                         value={staffMember.role}
@@ -1158,7 +1210,7 @@ const OnboardingPage = () => {
                                 {/* Farmers Section */}
                                 <div className="space-y-4">
                                     <div className="flex justify-between items-center">
-                                        <Label className="text-lg font-semibold">Participants ({farmers.filter(f => f.name.trim() !== "").length})</Label>
+                                        <Label className="text-lg font-semibold">Farmers ({farmers.filter(f => f.name.trim() !== "").length})</Label>
                                         <div className="flex gap-2">
                                             <Button 
                                                 type="button" 
@@ -1183,7 +1235,7 @@ const OnboardingPage = () => {
                                     
                                     <div className="space-y-3 max-h-64 overflow-y-auto border rounded-lg p-4 bg-gray-50">
                                         {farmers.map((farmer, index) => (
-                                            <div key={index} className="grid grid-cols-1 md:grid-cols-5 gap-2 items-end p-3 border rounded bg-white">
+                                            <div key={index} className="grid grid-cols-1 md:grid-cols-7 gap-2 items-end p-3 border rounded bg-white">
                                                 <div className="space-y-1">
                                                     <Label htmlFor={`farmer-name-${index}`}>Name *</Label>
                                                     <Input
@@ -1192,6 +1244,19 @@ const OnboardingPage = () => {
                                                         onChange={(e) => handleFarmerChange(index, 'name', e.target.value)}
                                                         placeholder="Farmer name"
                                                     />
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <Label htmlFor={`farmer-gender-${index}`}>Gender</Label>
+                                                    <select
+                                                        id={`farmer-gender-${index}`}
+                                                        value={farmer.gender}
+                                                        onChange={(e) => handleFarmerChange(index, 'gender', e.target.value)}
+                                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                                                    >
+                                                        <option value="">Select</option>
+                                                        <option value="Male">Male</option>
+                                                        <option value="Female">Female</option>
+                                                    </select>
                                                 </div>
                                                 <div className="space-y-1">
                                                     <Label htmlFor={`farmer-id-${index}`}>ID Number</Label>
@@ -1220,14 +1285,23 @@ const OnboardingPage = () => {
                                                         placeholder="Location"
                                                     />
                                                 </div>
+                                                <div className="space-y-1">
+                                                    <Label htmlFor={`farmer-region-${index}`}>Region</Label>
+                                                    <Input
+                                                        id={`farmer-region-${index}`}
+                                                        value={farmer.region}
+                                                        onChange={(e) => handleFarmerChange(index, 'region', e.target.value)}
+                                                        placeholder="Region"
+                                                    />
+                                                </div>
                                                 <div className="flex gap-2">
                                                     <div className="space-y-1 flex-1">
-                                                        <Label htmlFor={`farmer-region-${index}`}>Region</Label>
+                                                        <Label htmlFor={`farmer-county-${index}`}>County</Label>
                                                         <Input
-                                                            id={`farmer-region-${index}`}
-                                                            value={farmer.region}
-                                                            onChange={(e) => handleFarmerChange(index, 'region', e.target.value)}
-                                                            placeholder="Region"
+                                                            id={`farmer-county-${index}`}
+                                                            value={farmer.county}
+                                                            onChange={(e) => handleFarmerChange(index, 'county', e.target.value)}
+                                                            placeholder="County"
                                                         />
                                                     </div>
                                                     {farmers.length > 1 && (
@@ -1323,7 +1397,7 @@ const OnboardingPage = () => {
                                     disabled={loading}
                                 />
                                 <p className="text-sm text-muted-foreground">
-                                    Supported formats: .xlsx, .xls, .csv. File should contain columns: name, idNo, phoneNo, location, region
+                                    Supported formats: .xlsx, .xls, .csv. File should contain columns: name, gender, idNo, phoneNo, location, region, county
                                 </p>
                             </div>
                             <DialogFooter>
@@ -1340,10 +1414,10 @@ const OnboardingPage = () => {
             <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
                 <DialogContent className="max-w-6xl max-h-[80vh]">
                     <DialogHeader>
-                        <DialogTitle>Onboarding Session Details</DialogTitle>
+                        <DialogTitle>Additional Training Details</DialogTitle>
                         <DialogDescription>
                             {selectedRecord && (
-                                <div className="grid grid-cols-2 gap-4 mt-2">
+                                <div className="grid grid-cols-1 gap-4 mt-2">
                                     <div>
                                         <strong>Date:</strong> {selectedRecord.date.toLocaleDateString()}
                                     </div>
@@ -1353,21 +1427,19 @@ const OnboardingPage = () => {
                                     <div>
                                         <strong>Status:</strong> {getStatusBadge(selectedRecord.status)}
                                     </div>
-                                    <div className="col-span-2">
-                                        <strong>Staff Members:</strong> {selectedRecord.staff.map(s => `${s.name} (${s.role})`).join(', ')}
-                                    </div>
+                                    
                                     {/* Comments removed from view dialog as requested */}
                                 </div>
                             )}
                         </DialogDescription>
                     </DialogHeader>
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 max-h-96 overflow-y-auto">
+                    <div className="grid grid-cols-1 gap-6 max-h-96 overflow-y-auto">
                         {/* Staff Details */}
                         <div>
-                            <h4 className="font-semibold mb-3">Staff Members ({selectedRecord?.staff.length || 0})</h4>
+                            <h4 className="font-semibold mb-3">Trainers ({selectedRecord?.staff.length || 0})</h4>
                             <div className="space-y-2">
                                 {selectedRecord?.staff.map((staffMember, index) => (
-                                    <div key={index} className="flex justify-between items-center p-3 border rounded bg-gray-50">
+                                    <div key={index} className="flex justify-between items-center p-1 border rounded bg-gray-50">
                                         <div>
                                             <span className="font-medium">{staffMember.name}</span>
                                             <Badge variant="secondary" className="ml-2">
@@ -1381,22 +1453,30 @@ const OnboardingPage = () => {
 
                         {/* Farmers Details */}
                         <div>
-                            <h4 className="font-semibold mb-3">Participants ({selectedRecord?.farmers.length || 0})</h4>
+                            <h4 className="font-semibold mb-3">Farmers ({selectedRecord?.farmers.length || 0})</h4>
                             <div className="max-h-64 overflow-y-auto">
                                 <table className="w-full border-collapse border border-gray-300 text-sm">
                                     <thead>
                                         <tr className="bg-gray-100">
                                             <th className="text-left py-2 px-3 font-medium text-gray-600 border">Name</th>
+                                            <th className="text-left py-2 px-3 font-medium text-gray-600 border">Gender</th>
                                             <th className="text-left py-2 px-3 font-medium text-gray-600 border">ID Number</th>
                                             <th className="text-left py-2 px-3 font-medium text-gray-600 border">Phone</th>
                                             <th className="text-left py-2 px-3 font-medium text-gray-600 border">Location</th>
                                             <th className="text-left py-2 px-3 font-medium text-gray-600 border">Region</th>
+                                            <th className="text-left py-2 px-3 font-medium text-gray-600 border">County</th> {/* Added county column */}
                                         </tr>
                                     </thead>
                                     <tbody>
                                         {selectedRecord?.farmers.map((farmer, index) => (
                                             <tr key={index} className="border-b hover:bg-gray-50">
                                                 <td className="py-2 px-3 border text-gray-700">{farmer.name}</td>
+                                                <td className="py-2 px-3 border text-gray-700">
+                                                    <Badge variant={farmer.gender === 'Male' ? 'default' : 'secondary'} 
+                                                           className={farmer.gender === 'Male' ? 'bg-blue-100 text-blue-800' : 'bg-pink-100 text-pink-800'}>
+                                                        {farmer.gender || 'N/A'}
+                                                    </Badge>
+                                                </td>
                                                 <td className="py-2 px-3 border text-gray-700">
                                                     <code className="bg-gray-100 px-2 py-1 rounded text-sm">
                                                         {farmer.idNo || 'N/A'}
@@ -1406,6 +1486,11 @@ const OnboardingPage = () => {
                                                 <td className="py-2 px-3 border text-gray-700">{farmer.location || 'N/A'}</td>
                                                 <td className="py-2 px-3 border text-gray-700">
                                                     <Badge variant="secondary">{farmer.region || 'N/A'}</Badge>
+                                                </td>
+                                                <td className="py-2 px-3 border text-gray-700">
+                                                    <Badge variant="outline" className="bg-purple-50 text-purple-700">
+                                                        {farmer.county || 'N/A'}
+                                                    </Badge>
                                                 </td>
                                             </tr>
                                         ))}

@@ -11,7 +11,9 @@ import {
   Upload,
   Activity,
   UserPlus,
-  LineChart
+  LineChart,
+  HeartPulse
+
 } from "lucide-react";
 
 import { NavLink } from "@/components/NavLink";
@@ -78,9 +80,14 @@ const baseMenuItems = [
     url: "/dashboard/activities"
   },
   { 
-    title: "On Boarding",
+    title: "Additional Training",
     icon: UserPlus,
     url: "/dashboard/onboarding"
+  },
+   { 
+    title: "Animal Health",
+    icon: HeartPulse,
+    url: "/dashboard/animalhealth"
   },
 ];
 

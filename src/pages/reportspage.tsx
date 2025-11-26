@@ -667,7 +667,7 @@ const PerformanceReport = () => {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <StatsCard 
           title="Total Farmers" 
-          value={stats.totalFarmers} 
+          value={stats.totalFarmers.toLocaleString()} 
           icon={Users}
           description={`${stats.maleFarmers} male, ${stats.femaleFarmers} female`}
           color="blue"
@@ -683,7 +683,7 @@ const PerformanceReport = () => {
 
         <StatsCard 
           title="Trained Farmers" 
-          value={stats.trainedFarmers} 
+          value={stats.trainedFarmers.toLocaleString()} 
           icon={GraduationCap}
           description={`${stats.trainedMale} male, ${stats.trainedFemale} female trained`}
           color="yellow"
@@ -691,7 +691,7 @@ const PerformanceReport = () => {
 
         <StatsCard 
           title="Offtake Participants" 
-          value={stats.offtakeParticipants} 
+          value={stats.offtakeParticipants.toLocaleString()} 
           icon={Award}
           description={`${((stats.offtakeParticipants / stats.totalFarmers) * 100).toFixed(1)}% participation rate`}
           color="green"
@@ -716,7 +716,7 @@ const PerformanceReport = () => {
                   </span>
                   <div className="flex justify-between items-center mt-0.5">
                     <span className="text-[9px] text-gray-800">
-                      {region.farmers}
+                      {region.farmers.toLocaleString()}
                     </span>
                   </div>
                 </div>
@@ -740,7 +740,7 @@ const PerformanceReport = () => {
 
         <StatsCard 
           title="Farmers with Breeds" 
-          value={breedStats.farmersReceivingBreeds} 
+          value={breedStats.farmersReceivingBreeds.toLocaleString()} 
           icon={UserCheck}
           description={`${((breedStats.farmersReceivingBreeds / stats.totalFarmers) * 100).toFixed(1)}% of total farmers`}
           color="blue"

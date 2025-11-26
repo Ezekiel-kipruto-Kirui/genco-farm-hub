@@ -443,6 +443,25 @@ const LivestockOfftakePage = () => {
       hasPrev: currentPage > 1
     }));
   }, [allOfftake, pagination.limit, pagination.page]);
+function safeTruncate(value: string | number) {
+  // Convert value to string
+  let str = String(value);
+
+  // Remove commas and all non-number chars except dot
+  str = str.replace(/[^0-9.]/g, "");
+
+  // Convert to number
+  const num = Number(str);
+
+  if (isNaN(num)) return "Invalid Number";
+
+  // Truncate rules
+  if (num >= 1_000_000_000) return (num / 1_000_000_000).toFixed(1) + "B";
+  if (num >= 1_000_000) return (num / 1_000_000).toFixed(1) + "M";
+  if (num >= 1_000) return (num / 1_000).toFixed(1) + "K";
+
+  return num.toLocaleString();
+}
 
   // Effects - optimized dependencies
   useEffect(() => {
@@ -1274,14 +1293,14 @@ const LivestockOfftakePage = () => {
 
         <StatsCard 
           title="TOTAL ANIMALS" 
-          value={stats.totalAnimals} 
+          value={stats.totalAnimals.toLocaleString()} 
           icon={Scale}
           description={`Avg Live: ${stats.averageLiveWeight.toFixed(1)}kg | Avg Carcass: ${stats.averageCarcassWeight.toFixed(1)}kg`}
         />
 
         <StatsCard 
           title="TOTAL REVENUE" 
-          value={formatCurrency(stats.totalRevenue)} 
+          value={ safeTruncate(formatCurrency(stats.totalRevenue))} 
           icon={CreditCard}
           description={`Average per goat: ${formatCurrency(stats.averageRevenue)}`}
         />

@@ -19,6 +19,7 @@ import CapacityBuildingPage from "./pages/CapacityBuildingPage";
 import LivestockOfftakePage from "./pages/LivestockOfftakePage";
 import ActivitiesPage from "./pages/ActivitiesPage"
 import OnboardingPage from "./pages/onboardingpage";
+import AnimalHealthPage from "./pages/Animalhealth";
 
 import FodderOfftakePage from "./pages/FodderOfftakePage";
 import UserManagementPage from "./pages/UserManagementPage";
@@ -80,6 +81,7 @@ const App = () => (
               
               <Route path="activities" element={<ActivitiesPage />} />
               <Route path="onboarding" element={<OnboardingPage />} />
+               <Route path="animalhealth" element={<AnimalHealthPage />} />
 
               {/* Admin Only Routes */}
               <Route 
