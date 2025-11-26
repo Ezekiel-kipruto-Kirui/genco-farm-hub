@@ -140,7 +140,7 @@ const Auth = () => {
                         type="button"
                         onClick={togglePasswordVisibility}
                         disabled={isLoading}
-                        className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-500 hover:text-blue-600 focus:outline-none focus:text-blue-600 transition-colors duration-200 bg-transparent hover:bg-transparent p-0 h-auto"
+                        className="absolute inset-y-0 right-0 pr-3 mr-2 flex items-center text-gray-500 hover:text-blue-600 focus:outline-none focus:text-blue-600 transition-colors duration-200 bg-transparent hover:bg-transparent p-0 h-auto"
                         aria-label={showPassword ? "Hide password" : "Show password"}
                       >
                         {showPassword ? (
