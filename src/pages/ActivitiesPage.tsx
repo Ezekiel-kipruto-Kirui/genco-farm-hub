@@ -293,15 +293,15 @@ const ActivitiesPage = () => {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <Link to="/dashboard">
+            {/* <Link to="/dashboard">
               <Button variant="outline" size="sm">
                 <ArrowLeft className="h-4 w-4 mr-2" />
                 Back to Dashboard
               </Button>
-            </Link>
+            </Link> */}
             <div>
-              <h1 className="text-3xl font-bold text-slate-900">Activities Management</h1>
-              <p className="text-slate-600">Manage and track all your field activities</p>
+              <h1 className="text-md font-bold text-slate-900">Activities Management</h1>
+            
             </div>
           </div>
           <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>

@@ -15,8 +15,15 @@ export default defineConfig(({ mode }) => ({
       'https://genco-farm-1h7eluisr-daves-projects-129ce1a9.vercel.app/' // optional: allow all ngrok subdomains
     ],
   },
-   build: {
-    chunkSizeWarningLimit: 1000, // increase limit to 1MB
+    build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          firebase: ["firebase/app", "firebase/auth", "firebase/firestore"],
+          react: ["react", "react-dom"],
+        },
+      },
+    },
   },
   plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
   resolve: {
