@@ -770,7 +770,7 @@ const AnimalHealthPage = () => {
                 <div className="space-y-4 border-t pt-4">
                   <div className="flex items-center justify-between">
                     <Label className="text-sm font-medium text-slate-700">
-                      Trainers ({fieldOfficers.length}) <span className="text-red-500">*</span>
+                      Vaccination Team ({fieldOfficers.length}) <span className="text-red-500">*</span>
                     </Label>
                    
                   </div>
@@ -1029,7 +1029,7 @@ const AnimalHealthPage = () => {
                       <th className="p-4 text-left font-semibold text-slate-700 text-sm">Location</th>
                       <th className="p-4 text-left font-semibold text-slate-700 text-sm">Vaccines</th>
                       <th className="p-4 text-left font-semibold text-slate-700 text-sm">Total Doses</th>
-                      <th className="p-4 text-left font-semibold text-slate-700 text-sm">Field Officers</th>
+                      <th className="p-4 text-left font-semibold text-slate-700 text-sm">Vaccination team</th>
                       <th className="p-4 text-left font-semibold text-slate-700 text-sm">Actions</th>
                     </tr>
                   </thead>

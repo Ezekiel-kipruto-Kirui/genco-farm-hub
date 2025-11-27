@@ -12,7 +12,7 @@ export default defineConfig(({ mode }) => ({
     allowedHosts: [
       'stumpiest-caudally-eloy.ngrok-free.dev', // your current ngrok link
       '.ngrok-free.dev',
-      'https://genco-farm-1h7eluisr-daves-projects-129ce1a9.vercel.app/' // optional: allow all ngrok subdomains
+       // optional: allow all ngrok subdomains
     ],
   },
     build: {
