@@ -77,7 +77,7 @@ const Auth = () => {
             </div>
 
             <p className="mt-2 text-center text-blue-100 text-sm font-medium">
-              Sign in to your Clean Page Laundry account
+              Sign in to your Genco account
             </p>
           </div>
 
@@ -193,12 +193,7 @@ const Auth = () => {
             </p>
 
             <div className="mt-8 text-center pt-5 border-t border-gray-200">
-              <p className="text-sm text-gray-700">
-                Don't have an account?
-                <a href="#" className="font-semibold text-blue-700 hover:text-blue-800 transition-colors duration-200 ml-1">
-                  Contact us to register
-                </a>
-              </p>
+             
             </div>
           </div>
         </div>
