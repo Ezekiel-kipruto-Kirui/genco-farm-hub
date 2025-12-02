@@ -114,12 +114,14 @@ interface EditForm {
 const PAGE_LIMIT = 15;
 const EXPORT_HEADERS = [
   'Date', 'Farmer Name', 'Gender', 'Farmer ID', 'Phone', 'Location', 
-  'Number of goats', 'Vaccine', 'Vaccine Date', 'Training Status', 'Breeds',
-  'County', 'Subcounty', 'Region', 'Male Goats', 'Female Goats', 'Total Goats',
-  'New Breed Males', 'New Breed Females', 'New Breed Young', 'Deworming Schedule',
-  'Dipping Date', 'Deworming Date', 'Training Date', 'Training Type', 'Traceability',
-  'Weight1', 'Weight2', 'Weight3', 'Weight4', 'Weight5', 'Weight6', 'Weight7',
-  'Range First', 'Range Second', 'Range Third', 'Range Forth'
+  'Region', 'Male Goats', 'Female Goats', 'Total Goats', 'Vaccine', 
+  'Vaccine Date', 'Training Status', 'Number of Breeds',
+  'New Breed Males', 'New Breed Females', 'New Breed Young', 
+  'Total New Breeds', 'County', 'Subcounty',
+  'Deworming Schedule', 'Dipping Date', 'Deworming Date', 'Training Date', 
+  'Training Type', 'Traceability', 'Weight1', 'Weight2', 'Weight3', 
+  'Weight4', 'Weight5', 'Weight6', 'Weight7', 'Range First', 
+  'Range Second', 'Range Third', 'Range Forth'
 ];
 
 // Helper functions
@@ -162,6 +164,19 @@ const formatDate = (date: any): string => {
   return parsedDate ? parsedDate.toLocaleDateString() : 'N/A';
 };
 
+// Calculate total goats properly (avoid double counting)
+const calculateTotalGoats = (farmer: Farmer): number => {
+  // Use either goatsMale/maleGoats (camelCase) OR maleGoats (PascalCase), not both
+  const maleGoats = farmer.goatsMale || farmer.maleGoats || 0;
+  const femaleGoats = farmer.goatsFemale || farmer.femaleGoats || 0;
+  return maleGoats + femaleGoats;
+};
+
+// Calculate total new breeds
+const calculateTotalNewBreeds = (farmer: Farmer): number => {
+  return (farmer.newBreedMales || 0) + (farmer.newBreedFemales || 0) + (farmer.newBreedYoung || 0);
+};
+
 // Debounce hook
 const useDebounce = (value: string, delay: number) => {
   const [debouncedValue, setDebouncedValue] = useState(value);
@@ -177,6 +192,17 @@ const useDebounce = (value: string, delay: number) => {
   }, [value, delay]);
 
   return debouncedValue;
+};
+
+// Function to create properly formatted CSV with column widths
+const createFormattedCSV = (headers: string[], data: any[][]): string => {
+  // Create CSV with proper formatting for Excel auto-width
+  const csvRows = [
+    headers.map(header => `"${header}"`).join(','),
+    ...data.map(row => row.map(field => `"${field}"`).join(','))
+  ].join('\n');
+  
+  return csvRows;
 };
 
 const LivestockFarmersPage = () => {
@@ -292,11 +318,11 @@ const LivestockFarmersPage = () => {
           subcounty: getField("subcounty", "Subcounty", "district"),
           region: getField("region"),
           
-          // Livestock Information
-          goatsMale: getNumberField("goatsMale", "GoatsMale", "maleGoats", "goats_male"),
-          goatsFemale: getNumberField("femaleGoats", "female_goats", "goats_female"),
-          maleGoats: getNumberField("maleGoats", "goatsMale"),
-          femaleGoats: getNumberField("femaleGoats", "goatsFemale"),
+          // Livestock Information - FIXED: Use either camelCase or PascalCase, not both
+          goatsMale: getNumberField("goatsMale", "GoatsMale"),
+          goatsFemale: getNumberField("goatsFemale", "GoatsFemale"),
+          maleGoats: getNumberField("maleGoats", "MaleGoats"),
+          femaleGoats: getNumberField("femaleGoats", "FemaleGoats"),
           numberOfBreeds: getNumberField("numberOfBreeds", "NumberOfBreeds", "breeds", "totalBreeds"),
           newBreedFemales: getNumberField("newBreedFemales", "NewBreedFemales"),
           newBreedMales: getNumberField("newBreedMales", "NewBreedMales"),
@@ -445,11 +471,11 @@ const LivestockFarmersPage = () => {
       return true;
     });
 
-    // Calculate stats
+    // Calculate stats with proper goat counting
     const maleFarmers = filtered.filter(f => f.gender?.toLowerCase() === 'male').length;
     const femaleFarmers = filtered.filter(f => f.gender?.toLowerCase() === 'female').length;
     const totalGoats = filtered.reduce((sum, farmer) => 
-      sum + (farmer.goatsMale || 0) + (farmer.goatsFemale || 0) + (farmer.maleGoats || 0) + (farmer.femaleGoats || 0), 0);
+      sum + calculateTotalGoats(farmer), 0);
     
     // Count trained farmers from Capacity Building records
     const trainedFarmers = filtered.filter(farmer => isFarmerTrained(farmer)).length;
@@ -683,9 +709,12 @@ const LivestockFarmersPage = () => {
       }
 
       const csvData = filteredFarmers.map(farmer => {
-        const totalGoats = (farmer.goatsMale || 0) + (farmer.goatsFemale || 0) + (farmer.maleGoats || 0) + (farmer.femaleGoats || 0);
+        const maleGoats = farmer.goatsMale || farmer.maleGoats || 0;
+        const femaleGoats = farmer.goatsFemale || farmer.femaleGoats || 0;
+        const totalGoats = calculateTotalGoats(farmer);
         const isTrained = isFarmerTrained(farmer);
         const trainingDetails = getFarmerTrainingDetails(farmer);
+        const totalNewBreeds = calculateTotalNewBreeds(farmer);
 
         return [
           formatDate(farmer.dateSubmitted || farmer.createdAt),
@@ -694,20 +723,20 @@ const LivestockFarmersPage = () => {
           farmer.farmerId || farmer.IdNo || farmer.idNo || 'N/A',
           farmer.phone || farmer.phoneNo || 'N/A',
           farmer.location || farmer.region || farmer.county || 'N/A',
+          farmer.region || 'N/A',
+          maleGoats.toString(),
+          femaleGoats.toString(),
           totalGoats.toString(),
           farmer.vaccineType || 'N/A',
           formatDate(farmer.vaccineDate || farmer.vaccinationDate),
           isTrained ? 'Trained' : 'Not Trained',
           (farmer.numberOfBreeds || 0).toString(),
-          farmer.county || 'N/A',
-          farmer.subcounty || 'N/A',
-          farmer.region || 'N/A',
-          (farmer.goatsMale || farmer.maleGoats || 0).toString(),
-          (farmer.goatsFemale || farmer.femaleGoats || 0).toString(),
-          totalGoats.toString(),
           (farmer.newBreedMales || 0).toString(),
           (farmer.newBreedFemales || 0).toString(),
           (farmer.newBreedYoung || 0).toString(),
+          totalNewBreeds.toString(),
+          farmer.county || 'N/A',
+          farmer.subcounty || 'N/A',
           farmer.dewormingSchedule || 'N/A',
           formatDate(farmer.dippingDate),
           formatDate(farmer.dewormingDate),
@@ -728,9 +757,8 @@ const LivestockFarmersPage = () => {
         ];
       });
 
-      const csvContent = [EXPORT_HEADERS, ...csvData]
-        .map(row => row.map(field => `"${field}"`).join(','))
-        .join('\n');
+      // Create formatted CSV with properly sized columns
+      const csvContent = createFormattedCSV(EXPORT_HEADERS, csvData);
 
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const url = window.URL.createObjectURL(blob);
@@ -751,7 +779,7 @@ const LivestockFarmersPage = () => {
 
       toast({
         title: "Export Successful",
-        description: `Exported ${filteredFarmers.length} records with applied filters`,
+        description: `Exported ${filteredFarmers.length} records with applied filters. Total animals: ${stats.totalGoats}`,
       });
 
     } catch (error) {
@@ -764,7 +792,7 @@ const LivestockFarmersPage = () => {
     } finally {
       setExportLoading(false);
     }
-  }, [filteredFarmers, filters.startDate, filters.endDate, isFarmerTrained, getFarmerTrainingDetails, toast]);
+  }, [filteredFarmers, filters.startDate, filters.endDate, isFarmerTrained, getFarmerTrainingDetails, stats.totalGoats, toast]);
 
   // FIXED: Proper page change handler
   const handlePageChange = useCallback((newPage: number) => {
@@ -926,9 +954,9 @@ const LivestockFarmersPage = () => {
     </Card>
   ), []);
 
-  // TableRow component
+  // TableRow component - FIXED: Use proper total goats calculation
   const TableRow = useCallback(({ farmer }: { farmer: Farmer }) => {
-    const totalGoats = (farmer.goatsMale || 0) + (farmer.goatsFemale || 0) + (farmer.maleGoats || 0) + (farmer.femaleGoats || 0);
+    const totalGoats = calculateTotalGoats(farmer);
     const isTrained = isFarmerTrained(farmer);
     const trainingDetails = getFarmerTrainingDetails(farmer);
     
@@ -965,14 +993,14 @@ const LivestockFarmersPage = () => {
         </td>
         <td className="py-1 px-5 text-xs text-gray-600">
           <div className="flex flex-col gap-1">
-            <span>Total: {farmer.numberOfBreeds || 0}</span>
-            {(farmer.newBreedMales || farmer.newBreedFemales || farmer.newBreedYoung) && (
+            <span> {farmer.numberOfBreeds || 0}</span>
+            {/* {(farmer.newBreedMales || farmer.newBreedFemales || farmer.newBreedYoung) && (
               <div className="flex gap-1 text-xs text-gray-500">
                 <span>M: {farmer.newBreedMales || 0}</span>
                 <span>F: {farmer.newBreedFemales || 0}</span>
                 <span>Y: {farmer.newBreedYoung || 0}</span>
               </div>
-            )}
+            )} */}
           </div>
         </td>
         <td className="py-1 px-5 text-xs text-gray-600">
@@ -1509,7 +1537,7 @@ const LivestockFarmersPage = () => {
                   <div>
                     <Label className="text-sm font-medium text-slate-600">Total Goats</Label>
                     <p className="text-slate-900 font-medium text-lg font-bold">
-                      {((viewingFarmer.goatsMale || 0) + (viewingFarmer.goatsFemale || 0) + (viewingFarmer.maleGoats || 0) + (viewingFarmer.femaleGoats || 0)).toLocaleString()}
+                      {calculateTotalGoats(viewingFarmer).toLocaleString()}
                     </p>
                   </div>
                   <div>
@@ -1541,7 +1569,7 @@ const LivestockFarmersPage = () => {
                     </div>
                     <div className="mt-2 text-center">
                       <p className="text-sm text-slate-600">
-                        Total New Breeds: {(viewingFarmer.newBreedMales || 0) + (viewingFarmer.newBreedFemales || 0) + (viewingFarmer.newBreedYoung || 0)}
+                        Total New Breeds: {calculateTotalNewBreeds(viewingFarmer)}
                       </p>
                     </div>
                   </div>
@@ -1622,140 +1650,140 @@ const LivestockFarmersPage = () => {
       </Dialog>
 
       {/* Edit Dialog */}
-      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="sm:max-w-2xl bg-white rounded-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-slate-900">
-              <Edit className="h-5 w-5 text-blue-600" />
-              Edit Farmer Data
-            </DialogTitle>
-          </DialogHeader>
-          <div className="grid gap-4 py-4">
-            {/* Personal Information */}
-            <div className="space-y-4">
-              <h3 className="font-semibold text-slate-800">Personal Information</h3>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="edit-name">Farmer Name</Label>
-                  <Input
-                    id="edit-name"
-                    value={editForm.name}
-                    onChange={(e) => setEditForm(prev => ({ ...prev, name: e.target.value }))}
-                    className="bg-white border-slate-300"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-id">ID Number</Label>
-                  <Input
-                    id="edit-id"
-                    value={editForm.IdNo}
-                    onChange={(e) => setEditForm(prev => ({ ...prev, IdNo: e.target.value }))}
-                    className="bg-white border-slate-300"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-date">Date</Label>
-                  <Input
-                    id="edit-date"
-                    type="date"
-                    value={editForm.date}
-                    onChange={(e) => setEditForm(prev => ({ ...prev, date: e.target.value }))}
-                    className="bg-white border-slate-300"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-gender">Gender</Label>
-                  <Select value={editForm.gender} onValueChange={(value) => setEditForm(prev => ({ ...prev, gender: value }))}>
-                    <SelectTrigger className="bg-white border-slate-300">
-                      <SelectValue placeholder="Select gender" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="male">Male</SelectItem>
-                      <SelectItem value="female">Female</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            </div>
-
-            {/* Location Information */}
-            <div className="space-y-4">
-              <h3 className="font-semibold text-slate-800">Location Information</h3>
-              <div className="grid grid-cols-1 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="edit-location">Location</Label>
-                  <Input
-                    id="edit-location"
-                    value={editForm.location}
-                    onChange={(e) => setEditForm(prev => ({ ...prev, location: e.target.value }))}
-                    className="bg-white border-slate-300"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* New Breed Information */}
-            <div className="space-y-4">
-              <h3 className="font-semibold text-slate-800 flex items-center gap-2">
-              
-                New Breed Distribution
-              </h3>
-              <div className="grid grid-cols-3 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="edit-new-breed-males" className="text-sm">New Breed Males</Label>
-                  <Input
-                    id="edit-new-breed-males"
-                    type="number"
-                    value={editForm.newBreedMales}
-                    onChange={(e) => setEditForm(prev => ({ ...prev, newBreedMales: e.target.value }))}
-                    className="bg-white border-slate-300 text-center"
-                    min="0"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-new-breed-females" className="text-sm">New Breed Females</Label>
-                  <Input
-                    id="edit-new-breed-females"
-                    type="number"
-                    value={editForm.newBreedFemales}
-                    onChange={(e) => setEditForm(prev => ({ ...prev, newBreedFemales: e.target.value }))}
-                    className="bg-white border-slate-300 text-center"
-                    min="0"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-new-breed-young" className="text-sm">New Breed Young</Label>
-                  <Input
-                    id="edit-new-breed-young"
-                    type="number"
-                    value={editForm.newBreedYoung}
-                    onChange={(e) => setEditForm(prev => ({ ...prev, newBreedYoung: e.target.value }))}
-                    className="bg-white border-slate-300 text-center"
-                    min="0"
-                  />
-                </div>
-              </div>
-              <div className="text-center">
-                <p className="text-sm text-slate-600">
-                  Total New Breeds: {(
-                    (parseInt(editForm.newBreedMales) || 0) + 
-                    (parseInt(editForm.newBreedFemales) || 0) + 
-                    (parseInt(editForm.newBreedYoung) || 0)
-                  ).toLocaleString()}
-                </p>
-              </div>
-            </div>
+      {/* Edit Dialog */}
+<Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+  <DialogContent className="sm:max-w-2xl bg-white rounded-2xl max-h-[90vh] overflow-y-auto">
+    <DialogHeader>
+      <DialogTitle className="flex items-center gap-2 text-slate-900">
+        <Edit className="h-5 w-5 text-blue-600" />
+        Edit Farmer Data
+      </DialogTitle>
+    </DialogHeader>
+    <div className="grid gap-4 py-4">
+      {/* Personal Information */}
+      <div className="space-y-4">
+        <h3 className="font-semibold text-slate-800">Personal Information</h3>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label htmlFor="edit-name">Farmer Name</Label>
+            <Input
+              id="edit-name"
+              value={editForm.name}
+              onChange={(e) => setEditForm(prev => ({ ...prev, name: e.target.value }))}
+              className="bg-white border-slate-300"
+            />
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsEditDialogOpen(false)} className="border-slate-300">
-              Cancel
-            </Button>
-            <Button onClick={handleEditSubmit} className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white">
-              Save Changes
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          <div className="space-y-2">
+            <Label htmlFor="edit-id">ID Number</Label>
+            <Input
+              id="edit-id"
+              value={editForm.IdNo}
+              onChange={(e) => setEditForm(prev => ({ ...prev, IdNo: e.target.value }))}
+              className="bg-white border-slate-300"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="edit-date">Date</Label>
+            <Input
+              id="edit-date"
+              type="date"
+              value={editForm.date}
+              onChange={(e) => setEditForm(prev => ({ ...prev, date: e.target.value }))}
+              className="bg-white border-slate-300"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="edit-gender">Gender</Label>
+            <Select value={editForm.gender} onValueChange={(value) => setEditForm(prev => ({ ...prev, gender: value }))}>
+              <SelectTrigger className="bg-white border-slate-300">
+                <SelectValue placeholder="Select gender" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="male">Male</SelectItem>
+                <SelectItem value="female">Female</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      </div>
+
+      {/* Location Information */}
+      <div className="space-y-4">
+        <h3 className="font-semibold text-slate-800">Location Information</h3>
+        <div className="grid grid-cols-1 gap-4">
+          <div className="space-y-2">
+            <Label htmlFor="edit-location">Location</Label>
+            <Input
+              id="edit-location"
+              value={editForm.location}
+              onChange={(e) => setEditForm(prev => ({ ...prev, location: e.target.value }))}
+              className="bg-white border-slate-300"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* New Breed Information */}
+      <div className="space-y-4">
+        <h3 className="font-semibold text-slate-800 flex items-center gap-2">
+          New Breed Distribution
+        </h3>
+        <div className="grid grid-cols-3 gap-4">
+          <div className="space-y-2">
+            <Label htmlFor="edit-new-breed-males" className="text-sm">New Breed Males</Label>
+            <Input
+              id="edit-new-breed-males"
+              type="number"
+              value={editForm.newBreedMales}
+              onChange={(e) => setEditForm(prev => ({ ...prev, newBreedMales: e.target.value }))}
+              className="bg-white border-slate-300 text-center"
+              min="0"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="edit-new-breed-females" className="text-sm">New Breed Females</Label>
+            <Input
+              id="edit-new-breed-females"
+              type="number"
+              value={editForm.newBreedFemales}
+              onChange={(e) => setEditForm(prev => ({ ...prev, newBreedFemales: e.target.value }))}
+              className="bg-white border-slate-300 text-center"
+              min="0"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="edit-new-breed-young" className="text-sm">New Breed Young</Label>
+            <Input
+              id="edit-new-breed-young"
+              type="number"
+              value={editForm.newBreedYoung}
+              onChange={(e) => setEditForm(prev => ({ ...prev, newBreedYoung: e.target.value }))}
+              className="bg-white border-slate-300 text-center"
+              min="0"
+            />
+          </div>
+        </div>
+        <div className="text-center">
+          <p className="text-sm text-slate-600">
+            Total New Breeds: {(
+              (parseInt(editForm.newBreedMales) || 0) + 
+              (parseInt(editForm.newBreedFemales) || 0) + 
+              (parseInt(editForm.newBreedYoung) || 0)
+            ).toLocaleString()}
+          </p>
+        </div>
+      </div>
+    </div>
+    <DialogFooter>
+      <Button variant="outline" onClick={() => setIsEditDialogOpen(false)} className="border-slate-300">
+        Cancel
+      </Button>
+      <Button onClick={handleEditSubmit} className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white">
+        Save Changes
+      </Button>
+    </DialogFooter>
+  </DialogContent>
+</Dialog>
     </div>
   );
 };

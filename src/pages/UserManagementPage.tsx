@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { collection, getDocs, query, updateDoc, doc, deleteDoc, writeBatch, addDoc } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { collection, getDocs, query, updateDoc, doc, deleteDoc, writeBatch, addDoc, serverTimestamp } from "firebase/firestore";
+import { createUserWithEmailAndPassword, deleteUser } from "firebase/auth";
+import { db, auth, secondaryAuth } from "@/lib/firebase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,7 +11,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
-import { Download, Users, User, Edit, Trash2, Mail, Shield, Calendar, Eye, MapPin, Phone, Plus } from "lucide-react";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Download, Users, User, Edit, Trash2, Mail, Shield, Calendar, Eye, MapPin, Phone, Plus, AlertTriangle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 // Types
@@ -19,10 +21,11 @@ interface UserRecord {
   name?: string;
   email?: string;
   role?: string;
-  
   createdAt?: any;
   lastLogin?: any;
   status?: string;
+  updatedAt?: any;
+  uid?: string;
 }
 
 interface Filters {
@@ -31,7 +34,6 @@ interface Filters {
   status: string;
   startDate: string;
   endDate: string;
- 
 }
 
 interface Stats {
@@ -40,7 +42,6 @@ interface Stats {
   adminUsers: number;
   chiefAdminUsers: number;
   androidUsers: number;
- 
 }
 
 interface Pagination {
@@ -55,7 +56,6 @@ interface EditForm {
   name: string;
   email: string;
   role: string;
- 
   status: string;
 }
 
@@ -63,7 +63,6 @@ interface AddUserForm {
   name: string;
   email: string;
   role: string;
- 
   password: string;
   confirmPassword: string;
 }
@@ -71,7 +70,7 @@ interface AddUserForm {
 // Constants
 const PAGE_LIMIT = 15;
 const EXPORT_HEADERS = [
-  'Name', 'Email', 'Role', 'Status', 'Created At', 'Last Login'
+  'Name', 'Email', 'Role', 'Status', 'Created At', 'Last Login', 'Updated At'
 ];
 
 // Helper functions
@@ -79,17 +78,22 @@ const parseDate = (date: any): Date | null => {
   if (!date) return null;
   
   try {
+    // Handle Firebase Timestamp
     if (date.toDate && typeof date.toDate === 'function') {
       return date.toDate();
-    } else if (date instanceof Date) {
-      return date;
-    } else if (typeof date === 'string') {
+    }
+    // Handle server timestamp placeholder
+    else if (date && typeof date === 'object' && date.hasOwnProperty('seconds')) {
+      return new Date(date.seconds * 1000);
+    }
+    // Handle string dates
+    else if (typeof date === 'string') {
       const parsed = new Date(date);
       return isNaN(parsed.getTime()) ? null : parsed;
-    } else if (typeof date === 'number') {
+    }
+    // Handle number timestamps
+    else if (typeof date === 'number') {
       return new Date(date);
-    } else if (date.seconds) {
-      return new Date(date.seconds * 1000);
     }
   } catch (error) {
     console.error('Error parsing date:', error);
@@ -111,7 +115,22 @@ const getCurrentMonthDates = () => {
 
 const formatDate = (date: any): string => {
   const parsedDate = parseDate(date);
-  return parsedDate ? parsedDate.toLocaleDateString() : 'N/A';
+  return parsedDate ? parsedDate.toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric'
+  }) : 'N/A';
+};
+
+const formatDateTime = (date: any): string => {
+  const parsedDate = parseDate(date);
+  return parsedDate ? parsedDate.toLocaleString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  }) : 'N/A';
 };
 
 // Custom debounce hook
@@ -142,8 +161,11 @@ const UserManagementPage = () => {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isBulkDeleteDialogOpen, setIsBulkDeleteDialogOpen] = useState(false);
   const [viewingRecord, setViewingRecord] = useState<UserRecord | null>(null);
   const [editingRecord, setEditingRecord] = useState<UserRecord | null>(null);
+  const [recordToDelete, setRecordToDelete] = useState<UserRecord | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [addLoading, setAddLoading] = useState(false);
   
@@ -158,8 +180,6 @@ const UserManagementPage = () => {
     status: "all",
     startDate: currentMonth.startDate,
     endDate: currentMonth.endDate,
-   
-   
   });
 
   const [stats, setStats] = useState<Stats>({
@@ -168,7 +188,6 @@ const UserManagementPage = () => {
     adminUsers: 0,
     chiefAdminUsers: 0,
     androidUsers: 0,
-    
   });
 
   const [pagination, setPagination] = useState<Pagination>({
@@ -183,7 +202,6 @@ const UserManagementPage = () => {
     name: "",
     email: "",
     role: "",
-   
     status: "active"
   });
 
@@ -191,12 +209,11 @@ const UserManagementPage = () => {
     name: "",
     email: "",
     role: "user",
-   
     password: "",
     confirmPassword: ""
   });
 
-  // Data fetching - improved to get all users from Firebase Auth and Firestore
+  // Data fetching - improved to handle Firebase timestamps properly
   const fetchAllData = useCallback(async () => {
     try {
       setLoading(true);
@@ -211,10 +228,11 @@ const UserManagementPage = () => {
           name: data.name || data.displayName || data.email?.split('@')[0] || "Unknown User",
           email: data.email || "",
           role: data.role || "user",
-         
-          createdAt: data.createdAt || data.metadata?.creationTime || "",
-          lastLogin: data.lastLogin || data.metadata?.lastSignInTime || "",
-          status: data.status || "active"
+          createdAt: data.createdAt,
+          lastLogin: data.lastLogin,
+          status: data.status || "active",
+          updatedAt: data.updatedAt,
+          uid: data.uid
         };
       });
 
@@ -252,8 +270,6 @@ const UserManagementPage = () => {
         return false;
       }
 
-     
-
       // Date filter
       if (filterParams.startDate || filterParams.endDate) {
         const recordDate = parseDate(record.createdAt);
@@ -288,7 +304,6 @@ const UserManagementPage = () => {
     const adminUsers = filtered.filter(r => r.role?.toLowerCase() === 'admin').length;
     const chiefAdminUsers = filtered.filter(r => r.role?.toLowerCase() === 'chief-admin').length;
     const androidUsers = filtered.filter(r => r.role?.toLowerCase() === 'android').length;
-   
 
     const calculatedStats = {
       totalUsers: filtered.length,
@@ -296,7 +311,6 @@ const UserManagementPage = () => {
       adminUsers,
       chiefAdminUsers,
       androidUsers,
-     
     };
 
     // Calculate pagination
@@ -364,10 +378,10 @@ const UserManagementPage = () => {
         record.name || 'N/A',
         record.email || 'N/A',
         record.role || 'N/A',
-      
         record.status || 'N/A',
         formatDate(record.createdAt),
-        formatDate(record.lastLogin)
+        formatDate(record.lastLogin),
+        formatDate(record.updatedAt)
       ]);
 
       const csvContent = [EXPORT_HEADERS, ...csvData]
@@ -454,12 +468,21 @@ const UserManagementPage = () => {
       name: "",
       email: "",
       role: "user",
-     
       password: "",
       confirmPassword: ""
     });
     setIsAddDialogOpen(true);
   }, []);
+
+  const openDeleteDialog = useCallback((record: UserRecord) => {
+    setRecordToDelete(record);
+    setIsDeleteDialogOpen(true);
+  }, []);
+
+  const openBulkDeleteDialog = useCallback(() => {
+    if (selectedRecords.length === 0) return;
+    setIsBulkDeleteDialogOpen(true);
+  }, [selectedRecords]);
 
   const handleEditSubmit = useCallback(async () => {
     if (!editingRecord) return;
@@ -470,9 +493,8 @@ const UserManagementPage = () => {
         name: editForm.name,
         email: editForm.email,
         role: editForm.role,
-       
         status: editForm.status,
-        updatedAt: new Date()
+        updatedAt: serverTimestamp()
       };
 
       await updateDoc(recordRef, updateData);
@@ -495,60 +517,112 @@ const UserManagementPage = () => {
     }
   }, [editingRecord, editForm, fetchAllData, toast]);
 
-  const handleAddUser = useCallback(async () => {
-    if (addForm.password !== addForm.confirmPassword) {
-      toast({
-        title: "Error",
-        description: "Passwords do not match",
-        variant: "destructive",
-      });
-      return;
-    }
+const handleAddUser = useCallback(async () => {
+  console.log("Secondary auth instance:", secondaryAuth);   // <-- TEST THIS
 
-    if (addForm.password.length < 6) {
-      toast({
-        title: "Error",
-        description: "Password must be at least 6 characters",
-        variant: "destructive",
-      });
-      return;
-    }
+  if (!addForm.name || !addForm.email || !addForm.password) {
+    toast({ title: "Error", description: "Please fill in all required fields", variant: "destructive" });
+    return;
+  }
+
+  if (addForm.password !== addForm.confirmPassword) {
+    toast({ title: "Error", description: "Passwords do not match", variant: "destructive" });
+    return;
+  }
+
+  try {
+    setAddLoading(true);
+
+    // 1️ Create the Firebase Authentication user
+    const userCredential = await createUserWithEmailAndPassword(
+      secondaryAuth,
+      addForm.email,
+      addForm.password
+    );
+
+    const newUser = userCredential.user;
+
+    console.log("Created Firebase Auth user:", newUser.uid);
+
+    // 2 Save the user doc in Firestore
+    await addDoc(collection(db, "users"), {
+      uid: newUser.uid,
+      name: addForm.name,
+      email: addForm.email,
+      role: addForm.role,
+      status: "active",
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+
+    toast({ title: "Success", description: "User created successfully!" });
+
+    setIsAddDialogOpen(false);
+    setAddForm({
+      name: "",
+      email: "",
+      role: "user",
+      password: "",
+      confirmPassword: ""
+    });
+
+    fetchAllData();
+
+  } catch (error: any) {
+    console.error("CREATE USER ERROR:", error);  // <-- IMPORTANT
+    let msg = "Failed to create user";
+
+    if (error.code === "auth/email-already-in-use") msg = "Email already in use";
+    if (error.code === "auth/invalid-email") msg = "Invalid email";
+    if (error.code === "auth/weak-password") msg = "Weak password";
+
+    toast({ title: "Error", description: msg, variant: "destructive" });
+  } finally {
+    setAddLoading(false);
+  }
+}, [addForm, toast, fetchAllData]);
+
+  const handleDeleteSingle = useCallback(async () => {
+    if (!recordToDelete) return;
 
     try {
-      setAddLoading(true);
+      setDeleteLoading(true);
 
-      // Create user in Firebase Auth (you'll need to implement this)
-      // For now, we'll just add to Firestore
-      const userData = {
-        name: addForm.name,
-        email: addForm.email,
-        role: addForm.role,
-        
-        status: "active",
-        createdAt: new Date(),
-        updatedAt: new Date()
-      };
+      // If the user has a UID (was created with Firebase Auth), delete from Auth first
+      if (recordToDelete.uid) {
+        try {
+          // Note: To delete a user from Auth, you need to be signed in as that user
+          // or have admin privileges. This might require Firebase Admin SDK on the backend.
+          // For now, we'll just delete from Firestore and show a warning.
+          console.warn("User has Auth account. Consider implementing backend deletion for Auth users.");
+        } catch (authError) {
+          console.error("Error deleting user from Auth:", authError);
+        }
+      }
 
-      await addDoc(collection(db, "users"), userData);
+      // Delete from Firestore
+      await deleteDoc(doc(db, "users", recordToDelete.id));
 
       toast({
         title: "Success",
-        description: "User created successfully",
+        description: "User deleted successfully",
       });
 
-      setIsAddDialogOpen(false);
+      setIsDeleteDialogOpen(false);
+      setRecordToDelete(null);
+      setSelectedRecords(prev => prev.filter(id => id !== recordToDelete.id));
       fetchAllData();
     } catch (error) {
-      console.error("Error creating user:", error);
+      console.error("Error deleting user:", error);
       toast({
         title: "Error",
-        description: "Failed to create user",
+        description: "Failed to delete user",
         variant: "destructive",
       });
     } finally {
-      setAddLoading(false);
+      setDeleteLoading(false);
     }
-  }, [addForm, fetchAllData, toast]);
+  }, [recordToDelete, fetchAllData, toast]);
 
   const handleDeleteSelected = useCallback(async () => {
     if (selectedRecords.length === 0) return;
@@ -569,6 +643,7 @@ const UserManagementPage = () => {
         description: `Deleted ${selectedRecords.length} users successfully`,
       });
 
+      setIsBulkDeleteDialogOpen(false);
       setSelectedRecords([]);
       fetchAllData();
     } catch (error) {
@@ -582,33 +657,6 @@ const UserManagementPage = () => {
       setDeleteLoading(false);
     }
   }, [selectedRecords, fetchAllData, toast]);
-
-  const handleDeleteSingle = useCallback(async (recordId: string) => {
-    try {
-      setDeleteLoading(true);
-      const batch = writeBatch(db);
-      const docRef = doc(db, "users", recordId);
-      batch.delete(docRef);
-      await batch.commit();
-
-      toast({
-        title: "Success",
-        description: "User deleted successfully",
-      });
-
-      setSelectedRecords([]);
-      fetchAllData();
-    } catch (error) {
-      console.error("Error deleting user:", error);
-      toast({
-        title: "Error",
-        description: "Failed to delete user",
-        variant: "destructive",
-      });
-    } finally {
-      setDeleteLoading(false);
-    }
-  }, [fetchAllData, toast]);
 
   const uniqueRoles = useMemo(() =>
     ["chief-admin", "admin", "user", "android"],
@@ -629,7 +677,6 @@ const UserManagementPage = () => {
       status: "all",
       startDate: "",
       endDate: "",
-    
     });
     setPagination(prev => ({ ...prev, page: 1 }));
   }, []);
@@ -642,7 +689,6 @@ const UserManagementPage = () => {
   // Render components
   const StatsCard = useCallback(({ title, value, icon: Icon, description, children }: any) => (
     <Card className="bg-white text-slate-900 shadow-lg border border-gray-200 relative overflow-hidden">
-      {/* Left accent border */}
       <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-blue-500 to-purple-600"></div>
       
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 pt-4 pl-6">
@@ -687,7 +733,9 @@ const UserManagementPage = () => {
           <SelectContent>
             <SelectItem value="all">All Roles</SelectItem>
             {uniqueRoles.map(role => (
-              <SelectItem key={role} value={role}>{role.charAt(0).toUpperCase() + role.slice(1)}</SelectItem>
+              <SelectItem key={role} value={role}>
+                {role.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
+              </SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -702,13 +750,13 @@ const UserManagementPage = () => {
           <SelectContent>
             <SelectItem value="all">All Status</SelectItem>
             {uniqueStatuses.map(status => (
-              <SelectItem key={status} value={status}>{status.charAt(0).toUpperCase() + status.slice(1)}</SelectItem>
+              <SelectItem key={status} value={status}>
+                {status.charAt(0).toUpperCase() + status.slice(1)}
+              </SelectItem>
             ))}
           </SelectContent>
         </Select>
       </div>
-
-    
 
       <div className="space-y-2">
         <Label htmlFor="startDate" className="font-semibold text-gray-700">From Date</Label>
@@ -732,7 +780,7 @@ const UserManagementPage = () => {
         />
       </div>
     </div>
-  ), [searchValue, filters, uniqueRoles, uniqueStatuses,handleSearch, handleFilterChange]);
+  ), [searchValue, filters, uniqueRoles, uniqueStatuses, handleSearch, handleFilterChange]);
 
   const TableRow = useCallback(({ record }: { record: UserRecord }) => (
     <tr className="border-b hover:bg-blue-50 transition-all duration-200 group text-sm">
@@ -754,16 +802,15 @@ const UserManagementPage = () => {
             'bg-gray-100 text-gray-800'
           }
         >
-          {record.role || 'N/A'}
+          {record.role ? record.role.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ') : 'N/A'}
         </Badge>
       </td>
-    
       <td className="py-2 px-4 text-sm">
         <Badge 
           variant={record.status === 'active' ? 'default' : 'secondary'}
           className={record.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}
         >
-          {record.status || 'N/A'}
+          {record.status ? record.status.charAt(0).toUpperCase() + record.status.slice(1) : 'N/A'}
         </Badge>
       </td>
       <td className="py-2 px-4 text-sm">{formatDate(record.createdAt)}</td>
@@ -790,7 +837,7 @@ const UserManagementPage = () => {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => handleDeleteSingle(record.id)}
+                onClick={() => openDeleteDialog(record)}
                 className="h-6 w-6 p-0 hover:bg-red-50 hover:text-red-600 border-red-200"
               >
                 <Trash2 className="h-3 w-3 text-red-500" />
@@ -800,7 +847,7 @@ const UserManagementPage = () => {
         </div>
       </td>
     </tr>
-  ), [selectedRecords, handleSelectRecord, openViewDialog, openEditDialog, userRole, handleDeleteSingle]);
+  ), [selectedRecords, handleSelectRecord, openViewDialog, openEditDialog, openDeleteDialog, userRole]);
 
   return (
     <div className="space-y-6">
@@ -830,13 +877,25 @@ const UserManagementPage = () => {
             This Month
           </Button>
           {userRole === "chief-admin" && (
-            <Button 
-              onClick={openAddDialog}
-              className="bg-gradient-to-r from-green-600 to-blue-600 hover:from-green-700 hover:to-blue-700 text-white shadow-md text-xs"
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              Add User
-            </Button>
+            <>
+              <Button 
+                onClick={openAddDialog}
+                className="bg-gradient-to-r from-green-600 to-blue-600 hover:from-green-700 hover:to-blue-700 text-white shadow-md text-xs"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Add User
+              </Button>
+              {selectedRecords.length > 0 && (
+                <Button 
+                  onClick={openBulkDeleteDialog}
+                  variant="destructive"
+                  className="text-xs"
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete Selected ({selectedRecords.length})
+                </Button>
+              )}
+            </>
           )}
           <Button 
             onClick={handleExport} 
@@ -922,7 +981,6 @@ const UserManagementPage = () => {
                       <th className="text-left py-2 px-4 font-medium text-gray-600">Name</th>
                       <th className="text-left py-2 px-4 font-medium text-gray-600">Email</th>
                       <th className="text-left py-2 px-4 font-medium text-gray-600">Role</th>
-                     
                       <th className="text-left py-2 px-4 font-medium text-gray-600">Status</th>
                       <th className="text-left py-2 px-4 font-medium text-gray-600">Created</th>
                       <th className="text-left py-2 px-4 font-medium text-gray-600">Actions</th>
@@ -1008,7 +1066,7 @@ const UserManagementPage = () => {
                           'bg-gray-100 text-gray-800'
                         }
                       >
-                        {viewingRecord.role || 'N/A'}
+                        {viewingRecord.role ? viewingRecord.role.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ') : 'N/A'}
                       </Badge>
                     </p>
                   </div>
@@ -1019,14 +1077,12 @@ const UserManagementPage = () => {
                         variant={viewingRecord.status === 'active' ? 'default' : 'secondary'}
                         className={viewingRecord.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}
                       >
-                        {viewingRecord.status || 'N/A'}
+                        {viewingRecord.status ? viewingRecord.status.charAt(0).toUpperCase() + viewingRecord.status.slice(1) : 'N/A'}
                       </Badge>
                     </p>
                   </div>
                 </div>
               </div>
-
-              
 
               {/* Account Information */}
               <div className="bg-slate-50 rounded-xl p-4">
@@ -1037,12 +1093,22 @@ const UserManagementPage = () => {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <Label className="text-sm font-medium text-slate-600">Created At</Label>
-                    <p className="text-slate-900 font-medium">{formatDate(viewingRecord.createdAt)}</p>
+                    <p className="text-slate-900 font-medium">{formatDateTime(viewingRecord.createdAt)}</p>
                   </div>
                   <div>
                     <Label className="text-sm font-medium text-slate-600">Last Login</Label>
-                    <p className="text-slate-900 font-medium">{formatDate(viewingRecord.lastLogin)}</p>
+                    <p className="text-slate-900 font-medium">{formatDateTime(viewingRecord.lastLogin)}</p>
                   </div>
+                  <div>
+                    <Label className="text-sm font-medium text-slate-600">Last Updated</Label>
+                    <p className="text-slate-900 font-medium">{formatDateTime(viewingRecord.updatedAt)}</p>
+                  </div>
+                  {viewingRecord.uid && (
+                    <div>
+                      <Label className="text-sm font-medium text-slate-600">Auth UID</Label>
+                      <p className="text-slate-900 font-medium text-xs">{viewingRecord.uid}</p>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -1108,10 +1174,7 @@ const UserManagementPage = () => {
                     </SelectContent>
                   </Select>
                 </div>
-               
               </div>
-
-             
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
@@ -1214,13 +1277,6 @@ const UserManagementPage = () => {
                   </Select>
                 </div>
               </div>
-
-              <div className="grid grid-cols-2 gap-4">
-               
-               
-              </div>
-
-              
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setIsEditDialogOpen(false)} className="border-slate-300">
@@ -1234,6 +1290,65 @@ const UserManagementPage = () => {
         </Dialog>
       )}
 
+      {/* Single Delete Confirmation Dialog */}
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent className="bg-white">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-red-600">
+              <AlertTriangle className="h-5 w-5" />
+              Delete User
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete the user <strong>"{recordToDelete?.name}"</strong>? 
+              This action cannot be undone.
+              {recordToDelete?.uid && (
+                <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded-md">
+                  <p className="text-sm text-yellow-800">
+                    <strong>Note:</strong> This user has an authentication account. 
+                    The authentication account will need to be deleted separately through Firebase Admin SDK.
+                  </p>
+                </div>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteLoading}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteSingle}
+              disabled={deleteLoading}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              {deleteLoading ? "Deleting..." : "Delete User"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Bulk Delete Confirmation Dialog */}
+      <AlertDialog open={isBulkDeleteDialogOpen} onOpenChange={setIsBulkDeleteDialogOpen}>
+        <AlertDialogContent className="bg-white">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-red-600">
+              <AlertTriangle className="h-5 w-5" />
+              Delete Multiple Users
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete <strong>{selectedRecords.length} users</strong>? 
+              This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteLoading}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteSelected}
+              disabled={deleteLoading}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              {deleteLoading ? "Deleting..." : `Delete ${selectedRecords.length} Users`}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

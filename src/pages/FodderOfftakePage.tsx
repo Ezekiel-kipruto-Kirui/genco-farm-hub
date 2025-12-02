@@ -170,57 +170,70 @@ const FodderOfftakePage = () => {
     return isChiefAdmin(userRole);
   }, [userRole]);
 
-  // Data fetching with improved debugging
+  // Data fetching with improved debugging - FOCUSED ON FOFFTAKE
   const fetchAllData = useCallback(async () => {
     try {
       setLoading(true);
       console.log("🔄 Starting fodder offtake data fetch...");
       
       const data = await fetchData();
-      console.log("📦 Raw fetched data:", data);
+      console.log("📦 Raw fetched data keys:", Object.keys(data));
       
-      // Check for different possible collection names
-      const possibleCollectionNames = [
-        'fofftake', 
-        'fodderOfftake', 
-        'fodder_offtake',
-        'fodder-offtake',
-        'FodderOfftake',
-        'fodderOfftakeData',
-        'Fofftake'
-      ];
-      
+      // SPECIFICALLY TARGET THE FOFFTAKE COLLECTION
       let fodderOfftakeData: any[] = [];
-      let foundCollection = '';
       
-      // Try to find the data in different possible collection names
-      for (const collectionName of possibleCollectionNames) {
-        if (data[collectionName] && Array.isArray(data[collectionName])) {
-          console.log(`✅ Found data in collection: ${collectionName}`);
-          fodderOfftakeData = data[collectionName];
-          foundCollection = collectionName;
-          break;
-        }
-      }
-      
-      if (fodderOfftakeData.length === 0) {
-        console.warn("❌ No fodder offtake data found in any expected collection");
-        // Check if there are any arrays in the data
-        const arrayCollections = Object.keys(data).filter(key => Array.isArray(data[key]));
-        console.log("📊 Available array collections:", arrayCollections);
+      // Check for fofftake collection first (as defined in your firebase.ts)
+      if (data.fofftake && Array.isArray(data.fofftake)) {
+        console.log("✅ Found data in 'fofftake' collection");
+        fodderOfftakeData = data.fofftake;
+      } 
+      // If not found, check for other possible names
+      else {
+        const possibleCollectionNames = [
+          'fodderOfftake', 
+          'fodder_offtake',
+          'fodder-offtake',
+          'FodderOfftake',
+          'fodderOfftakeData',
+          'Fofftake'
+        ];
         
-        if (arrayCollections.length > 0) {
-          // Use the first array found as a fallback
-          foundCollection = arrayCollections[0];
-          fodderOfftakeData = data[foundCollection];
-          console.log(`🔄 Using fallback collection: ${foundCollection}`);
-        } else {
-          setAllFodderOfftake([]);
-          return;
+        let foundCollection = '';
+        for (const collectionName of possibleCollectionNames) {
+          if (data[collectionName] && Array.isArray(data[collectionName])) {
+            console.log(`🔄 Found data in alternative collection: ${collectionName}`);
+            fodderOfftakeData = data[collectionName];
+            foundCollection = collectionName;
+            break;
+          }
+        }
+        
+        if (fodderOfftakeData.length === 0) {
+          console.warn("❌ No fodder offtake data found in any expected collection");
+          // Log all available collections for debugging
+          const allCollections = Object.keys(data);
+          console.log("📊 All available collections:", allCollections);
+          
+          // Look for any collection that might contain fodder data
+          const potentialCollections = allCollections.filter(key => 
+            Array.isArray(data[key]) && 
+            (key.toLowerCase().includes('fodder') || key.toLowerCase().includes('offtake'))
+          );
+          
+          if (potentialCollections.length > 0) {
+            console.log("🔍 Potential fodder collections found:", potentialCollections);
+            // Use the first potential collection
+            fodderOfftakeData = data[potentialCollections[0]];
+            console.log(`🔄 Using potential collection: ${potentialCollections[0]}`);
+          } else {
+            setAllFodderOfftake([]);
+            return;
+          }
         }
       }
 
-      console.log(`📋 Processing ${fodderOfftakeData.length} records from collection: ${foundCollection}`);
+      console.log(`📋 Processing ${fodderOfftakeData.length} records from fodder offtake collection`);
+      console.log("🔍 Sample record:", fodderOfftakeData[0]);
       
       const processedData = fodderOfftakeData.map((item: any, index: number) => {
         // Handle date parsing
@@ -243,15 +256,24 @@ const FodderOfftakePage = () => {
         dateValue = parseFirestoreDate(dateValue);
 
         // Handle different field name variations for fodder offtake
+        // Prioritize field names that are most likely to be used
         const processedItem: FodderOfftake = {
           id: item.id || item.docId || `temp-${index}-${Date.now()}`,
           date: dateValue,
-          farmer_name: item.farmer_name || item.farmerName || item.farmer || item.Farmer || item.farmer_name || '',
-          phone_number: item.phone_number || item.phoneNumber || item.phone || item.Phone || item.mobile || item.contact || '',
-          bale_price: Number(item.bale_price || item.balePrice || item.price || item.Price || item.amount || item.cost || 0),
-          location: item.location || item.Location || item.area || item.Area || item.village || item.town || '',
-          region: item.region || item.Region || item.county || item.County || item.district || ''
+          farmer_name: item.farmer_name || item.farmerName || item.farmer || item.Farmer || item.name || '',
+          phone_number: item.phone_number || item.phoneNumber || item.phone || item.Phone || item.mobile || item.contact || item.telephone || '',
+          bale_price: Number(item.bale_price || item.balePrice || item.price || item.Price || item.amount || item.cost || item.bale_cost || 0),
+          location: item.location || item.Location || item.area || item.Area || item.village || item.town || item.sub_location || '',
+          region: item.region || item.Region || item.county || item.County || item.district || item.division || ''
         };
+
+        // Log field mapping for first record to debug
+        if (index === 0) {
+          console.log("🔧 Field mapping for first record:", {
+            original: item,
+            processed: processedItem
+          });
+        }
 
         return processedItem;
       });
@@ -482,7 +504,7 @@ const FodderOfftakePage = () => {
         });
       }, 200);
 
-      // Use the upload utility
+      // Use the upload utility - SPECIFICALLY FOR FOFFTAKE
       const result: UploadResult = await uploadDataWithValidation(uploadFile, "fofftake");
       
       clearInterval(progressInterval);
@@ -644,7 +666,7 @@ const FodderOfftakePage = () => {
       setSaving(true);
       
       // Update the record in the database
-      // await updateData('fodder-offtake', editingRecord.id, editingRecord);
+      // await updateData('fofftake', editingRecord.id, editingRecord);
       
       // Update local state
       setAllFodderOfftake(prev => 
@@ -675,12 +697,12 @@ const FodderOfftakePage = () => {
   // Memoized values
   const uniqueRegions = useMemo(() => {
     const regions = [...new Set(allFodderOfftake.map(f => f.region).filter(Boolean))];
-    return regions;
+    return regions.sort();
   }, [allFodderOfftake]);
 
   const uniqueLocations = useMemo(() => {
     const locations = [...new Set(allFodderOfftake.map(f => f.location).filter(Boolean))];
-    return locations;
+    return locations.sort();
   }, [allFodderOfftake]);
 
   const currentPageRecords = useMemo(getCurrentPageRecords, [getCurrentPageRecords]);
