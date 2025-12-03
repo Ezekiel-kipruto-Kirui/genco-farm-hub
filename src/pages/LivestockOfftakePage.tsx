@@ -211,8 +211,10 @@ const LivestockOfftakePage = () => {
   const [isWeightEditDialogOpen, setIsWeightEditDialogOpen] = useState(false);
   const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [isSingleDeleteDialogOpen, setIsSingleDeleteDialogOpen] = useState(false);
   const [viewingRecord, setViewingRecord] = useState<OfftakeData | null>(null);
   const [editingRecord, setEditingRecord] = useState<OfftakeData | null>(null);
+  const [recordToDelete, setRecordToDelete] = useState<OfftakeData | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   
@@ -443,25 +445,26 @@ const LivestockOfftakePage = () => {
       hasPrev: currentPage > 1
     }));
   }, [allOfftake, pagination.limit, pagination.page]);
-function safeTruncate(value: string | number) {
-  // Convert value to string
-  let str = String(value);
 
-  // Remove commas and all non-number chars except dot
-  str = str.replace(/[^0-9.]/g, "");
+  function safeTruncate(value: string | number) {
+    // Convert value to string
+    let str = String(value);
 
-  // Convert to number
-  const num = Number(str);
+    // Remove commas and all non-number chars except dot
+    str = str.replace(/[^0-9.]/g, "");
 
-  if (isNaN(num)) return "Invalid Number";
+    // Convert to number
+    const num = Number(str);
 
-  // Truncate rules
-  if (num >= 1_000_000_000) return (num / 1_000_000_000).toFixed(1) + "B";
-  if (num >= 1_000_000) return (num / 1_000_000).toFixed(1) + "M";
-  if (num >= 1_000) return (num / 1_000).toFixed(1) + "K";
+    if (isNaN(num)) return "Invalid Number";
 
-  return num.toLocaleString();
-}
+    // Truncate rules
+    if (num >= 1_000_000_000) return (num / 1_000_000_000).toFixed(1) + "B";
+    if (num >= 1_000_000) return (num / 1_000_000).toFixed(1) + "M";
+    if (num >= 1_000) return (num / 1_000).toFixed(1) + "K";
+
+    return num.toLocaleString();
+  }
 
   // Effects - optimized dependencies
   useEffect(() => {
@@ -521,7 +524,6 @@ function safeTruncate(value: string | number) {
         'Live Weight (kg)',
         'Carcass Weight (kg)',
         'Price per Animal (KES)',
-        
       ];
 
       const csvData = [];
@@ -572,7 +574,6 @@ function safeTruncate(value: string | number) {
               liveWeight !== null && liveWeight > 0 ? liveWeight.toFixed(1) : '',
               carcassWeight !== null && carcassWeight > 0 ? carcassWeight.toFixed(1) : '',
               price !== null && price > 0 ? price.toFixed(0) : '',
-              
             ];
             csvData.push(row);
             hasValidAnimals = true;
@@ -753,6 +754,54 @@ function safeTruncate(value: string | number) {
     setIsWeightEditDialogOpen(true);
   }, []);
 
+  // Individual record delete functions
+  const handleSingleDelete = async () => {
+    if (!recordToDelete) return;
+
+    try {
+      setDeleteLoading(true);
+      const recordRef = doc(db, "Livestock Offtake Data", recordToDelete.id);
+      await deleteDoc(recordRef);
+
+      toast({
+        title: "Success",
+        description: "Record deleted successfully",
+      });
+
+      setIsSingleDeleteDialogOpen(false);
+      setRecordToDelete(null);
+      // Remove from selected records if it was selected
+      setSelectedRecords(prev => prev.filter(id => id !== recordToDelete.id));
+      fetchAllData();
+    } catch (error) {
+      console.error("Error deleting record:", error);
+      toast({
+        title: "Error",
+        description: "Failed to delete record",
+        variant: "destructive",
+      });
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+  const openSingleDeleteConfirm = useCallback((record: OfftakeData) => {
+    setRecordToDelete(record);
+    setIsSingleDeleteDialogOpen(true);
+  }, []);
+
+  const openBulkDeleteConfirm = () => {
+    if (selectedRecords.length === 0) {
+      toast({
+        title: "No Records Selected",
+        description: "Please select records to delete",
+        variant: "destructive",
+      });
+      return;
+    }
+    setIsDeleteConfirmOpen(true);
+  };
+
   // File upload handlers
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -800,7 +849,7 @@ function safeTruncate(value: string | number) {
 
           // Process and upload data
           const batch = writeBatch(db);
-          const collectionRef = collection(db, "lofftake");
+          const collectionRef = collection(db, "Livestock Offtake Data");
 
           let successCount = 0;
           let errorCount = 0;
@@ -903,7 +952,7 @@ function safeTruncate(value: string | number) {
       const batch = writeBatch(db);
 
       selectedRecords.forEach(recordId => {
-        const docRef = doc(db, "lofftake", recordId);
+        const docRef = doc(db, "Livestock Offtake Data", recordId);
         batch.delete(docRef);
       });
 
@@ -929,24 +978,12 @@ function safeTruncate(value: string | number) {
     }
   };
 
-  const openDeleteConfirm = () => {
-    if (selectedRecords.length === 0) {
-      toast({
-        title: "No Records Selected",
-        description: "Please select records to delete",
-        variant: "destructive",
-      });
-      return;
-    }
-    setIsDeleteConfirmOpen(true);
-  };
-
   const handleEditSubmit = async () => {
     if (!editingRecord) return;
-    
+
     try {
-      const recordRef = doc(db, "lofftake", editingRecord.id);
-    
+      const recordRef = doc(db, "Livestock Offtake Data", editingRecord.id);
+
       const updateData = {
         date: editForm.date ? new Date(editForm.date) : null,
         farmerName: editForm.farmerName,
@@ -985,18 +1022,18 @@ function safeTruncate(value: string | number) {
 
   const handleWeightEditSubmit = async () => {
     if (!editingRecord) return;
-    
+
     try {
-      const recordRef = doc(db, "lofftake", editingRecord.id);
-      
+      const recordRef = doc(db, "Livestock Offtake Data", editingRecord.id);
+
       // Filter out zero values to maintain data integrity
       const filteredLiveWeights = weightEditForm.liveWeights.filter(weight => weight > 0);
       const filteredCarcassWeights = weightEditForm.carcassWeights.filter(weight => weight > 0);
       const filteredPrices = weightEditForm.prices.filter(price => price > 0);
-      
+
       // Calculate new total price based on updated prices
       const newTotalPrice = filteredPrices.reduce((sum, price) => sum + price, 0);
-      
+
       const updateData = {
         liveWeight: filteredLiveWeights.length > 0 ? filteredLiveWeights : 0,
         carcassWeight: filteredCarcassWeights.length > 0 ? filteredCarcassWeights : 0,
@@ -1197,24 +1234,37 @@ function safeTruncate(value: string | number) {
               size="sm"
               onClick={() => openViewDialog(record)}
               className="h-8 w-8 p-0 hover:bg-green-100 hover:text-green-600 border-green-200"
+              title="View Details"
             >
               <Eye className="h-4 w-4 text-green-500" />
             </Button>
-            {isChiefAdmin(userRole) &&(
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => openEditDialog(record)}
-                className="h-8 w-8 p-0 hover:bg-yellow-100 border-white"
-              >
-                <Edit className="h-4 w-4 text-orange-500" />
-              </Button>
+            {isChiefAdmin(userRole) && (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => openEditDialog(record)}
+                  className="h-8 w-8 p-0 hover:bg-yellow-100 border-white"
+                  title="Edit Record"
+                >
+                  <Edit className="h-4 w-4 text-orange-500" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => openSingleDeleteConfirm(record)}
+                  className="h-8 w-8 p-0 hover:bg-red-100 hover:text-red-600 border-white"
+                  title="Delete Record"
+                >
+                  <Trash2 className="h-4 w-4 text-red-500" />
+                </Button>
+              </>
             )}
           </div>
         </td>
       </tr>
     );
-  }, [selectedRecords, handleSelectRecord, openViewDialog, openEditDialog, userRole]);
+  }, [selectedRecords, handleSelectRecord, openViewDialog, openEditDialog, openSingleDeleteConfirm, userRole]);
 
   return (
     <div className="space-y-6">
@@ -1232,7 +1282,7 @@ function safeTruncate(value: string | number) {
             <Button 
               variant="destructive" 
               size="sm" 
-              onClick={openDeleteConfirm}
+              onClick={openBulkDeleteConfirm}
               disabled={deleteLoading}
               className="text-xs"
             >
@@ -1477,13 +1527,13 @@ function safeTruncate(value: string | number) {
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation Dialog */}
+      {/* Bulk Delete Confirmation Dialog */}
       <Dialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
         <DialogContent className="sm:max-w-md bg-white rounded-2xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-slate-900">
               <Trash2 className="h-5 w-5 text-red-600" />
-              Confirm Deletion
+              Confirm Bulk Deletion
             </DialogTitle>
             <DialogDescription>
               Are you sure you want to delete {selectedRecords.length} selected records? This action cannot be undone.
@@ -1512,6 +1562,59 @@ function safeTruncate(value: string | number) {
                 <>
                   <Trash2 className="h-4 w-4 mr-2" />
                   Delete {selectedRecords.length} Records
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Single Delete Confirmation Dialog */}
+      <Dialog open={isSingleDeleteDialogOpen} onOpenChange={setIsSingleDeleteDialogOpen}>
+        <DialogContent className="sm:max-w-md bg-white rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-slate-900">
+              <Trash2 className="h-5 w-5 text-red-600" />
+              Confirm Deletion
+            </DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this record? This action cannot be undone.
+              {recordToDelete && (
+                <div className="mt-2 p-3 bg-red-50 rounded-md">
+                  <p className="font-medium">Record Details:</p>
+                  <p className="text-sm">Farmer: {recordToDelete.farmerName}</p>
+                  <p className="text-sm">Date: {formatDate(recordToDelete.date)}</p>
+                  <p className="text-sm">Animals: {recordToDelete.noSheepGoats}</p>
+                </div>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setIsSingleDeleteDialogOpen(false);
+                setRecordToDelete(null);
+              }}
+              className="border-slate-300"
+            >
+              Cancel
+            </Button>
+            <Button 
+              variant="destructive"
+              onClick={handleSingleDelete}
+              disabled={deleteLoading}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              {deleteLoading ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  Deleting...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete Record
                 </>
               )}
             </Button>
